@@ -8,3 +8,4 @@ training/generated/
 training/output/
 model-packs/generated/
 .venv/
+release/

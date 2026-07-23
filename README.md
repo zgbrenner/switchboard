@@ -31,7 +31,13 @@ npm install
 npm run verify
 ```
 
-The unpacked extension is written to `dist/`.
+The unpacked extension is written to `dist/`. A reproducible install archive and SHA-256 file can be created with:
+
+```bash
+npm run package
+```
+
+Release artifacts are written to `release/`.
 
 ## Install locally
 
