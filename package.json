@@ -17,7 +17,8 @@
     "verify:extension": "node scripts/verify-extension.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "verify:python": "python -m unittest discover -s training/tests -v && python -m compileall -q training",
-    "prepare:training": "python -m training.prepare_data"
+    "prepare:training": "python -m training.prepare_data",
+    "package": "npm run verify && node scripts/package-release.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.2.0"
