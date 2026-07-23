@@ -44,6 +44,8 @@ await cp('extension/content-loader.js', 'dist/content-loader.js');
 await cp('extension/popup.html', 'dist/popup.html');
 await cp('extension/options.html', 'dist/options.html');
 await cp('styles', 'dist/styles', { recursive: true });
+await cp('LICENSE', 'dist/LICENSE');
+await cp('THIRD_PARTY_NOTICES.md', 'dist/THIRD_PARTY_NOTICES.md');
 
 if (await exists('model-packs/local')) {
   await cp('model-packs/local', 'dist/models', { recursive: true });
