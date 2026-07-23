@@ -59,6 +59,17 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
     }
   }
 
+  if (capabilities.vision) {
+    floor = tierAtLeast(floor, 'balanced');
+    score += 0.6;
+    reasons.push({ code: 'vision-floor', detail: 'Visual interpretation requires a vision-capable model and at least balanced reasoning.', weight: 0.6 });
+  }
+
+  if (categories.has('code') && (categories.has('planning') || categories.has('high-stakes'))) {
+    floor = tierAtLeast(floor, 'deep');
+    reasons.push({ code: 'complex-code-floor', detail: 'Code combined with architecture or high-stakes review requires deep reasoning.', weight: 1.2 });
+  }
+
   if (request.files.length > 0) {
     capabilities.files = true;
     floor = 'balanced';
@@ -110,7 +121,7 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
   const top = ranked[0]?.score ?? 0;
   const second = ranked[1]?.score ?? 0;
   const margin = top - second;
-  const explicitMax = reasons.some((reason) => reason.code === 'explicit-research') && score >= 5.5;
+  const explicitMax = reasons.some((reason) => reason.code === 'explicit-research') && score >= 4.5;
   const finalTier = explicitMax ? 'max' : tierAtLeast(selected, floor);
   const shouldUseJudge = promptSignals.vagueFollowUp || promptSignals.conflictingSignals || margin < 0.18;
   const confidence = clamp(explicitMax ? 0.94 : 0.58 + margin * 1.5 + Math.min(Math.abs(score), 4) * 0.045);

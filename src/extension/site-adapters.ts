@@ -1,6 +1,7 @@
 import type { ConversationTurn, QualityTier } from '../shared/types.js';
+import { rankModelLabels, type SupportedSite } from './model-selection.js';
 
-export type SupportedSite = 'chatgpt' | 'claude';
+export type { SupportedSite } from './model-selection.js';
 
 export interface SiteAdapter {
   site: SupportedSite;
@@ -53,34 +54,6 @@ function candidatePicker(selectors: readonly string[]): HTMLElement | null {
     .find((button) => /model|gpt|claude|sonnet|opus|haiku|thinking|pro/i.test(textOf(button))) as HTMLElement | undefined ?? null;
 }
 
-function routeKeywords(site: SupportedSite, tier: QualityTier): readonly string[] {
-  if (site === 'claude') {
-    return tier === 'fast' ? ['haiku', 'fast']
-      : tier === 'balanced' ? ['sonnet', 'default']
-      : tier === 'deep' ? ['opus', 'thinking', 'extended']
-      : ['opus', 'max', 'extended'];
-  }
-  return tier === 'fast' ? ['mini', 'instant', 'fast']
-    : tier === 'balanced' ? ['auto', 'standard', 'gpt-5']
-    : tier === 'deep' ? ['thinking', 'high', 'reasoning']
-    : ['pro', 'max', 'deep research'];
-}
-
-function scoreModelOption(site: SupportedSite, tier: QualityTier, label: string): number {
-  const normalized = label.toLowerCase();
-  if (/settings|manage|learn more|upgrade|usage|send|attach/.test(normalized)) return -100;
-  let score = 0;
-  const keywords = routeKeywords(site, tier);
-  keywords.forEach((keyword, index) => {
-    if (normalized.includes(keyword)) score += 12 - index * 2;
-  });
-  if (site === 'chatgpt' && /gpt|o\d|model/.test(normalized)) score += 1;
-  if (site === 'claude' && /claude|sonnet|opus|haiku/.test(normalized)) score += 1;
-  if (tier === 'fast' && /pro|opus|max|thinking/.test(normalized)) score -= 5;
-  if (tier === 'max' && /mini|haiku|instant/.test(normalized)) score -= 8;
-  return score;
-}
-
 async function wait(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
@@ -91,12 +64,10 @@ async function selectVisibleModel(site: SupportedSite, picker: HTMLElement | nul
   await wait(180);
   const options = [...document.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-collection-item], [data-headlessui-menu-item], [data-testid*="model"], div[tabindex="0"], button')]
     .filter(visible)
-    .map((element) => ({ element: element as HTMLElement, label: textOf(element) }))
-    .filter((option) => option.label.length > 0 && option.label.length < 180)
-    .map((option) => ({ ...option, score: scoreModelOption(site, tier, option.label) }))
-    .filter((option) => option.score > 0)
-    .sort((left, right) => right.score - left.score);
-  const best = options[0];
+    .map((element) => ({ element: element as HTMLElement, label: textOf(element) }));
+  const ranked = rankModelLabels(site, tier, options.map((option) => option.label));
+  const bestRank = ranked[0];
+  const best = bestRank ? options[bestRank.index] : undefined;
   if (!best) {
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     return { switched: false, reason: 'No compatible visible model option matched the route.' };

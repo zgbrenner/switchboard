@@ -37,3 +37,7 @@ A model pack may be enabled only when it has:
 ## Pack format
 
 The runtime contract is defined in `src/models/manifest.ts`. Moving revisions such as `main` are rejected. A pack is self-contained and may not execute remote code or fetch unverified weights.
+
+## Included toolchain
+
+The repository now includes deterministic JSONL preparation, Scout and Arbiter training entrypoints, a strict smoke-test benchmark, ONNX export, and model-pack hashing. The checked-in benchmark is deliberately small and must be expanded with a locked human-reviewed evaluation set before neural packs are enabled.

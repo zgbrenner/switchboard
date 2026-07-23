@@ -1,0 +1,8 @@
+# Install in an isolated environment. Training is not required to build the extension.
+torch>=2.6,<3
+transformers>=4.53,<5
+datasets>=3.6,<5
+accelerate>=1.8,<2
+numpy>=2,<3
+scikit-learn>=1.6,<2
+optimum[onnxruntime]>=1.26,<3
