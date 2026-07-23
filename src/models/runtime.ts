@@ -1,5 +1,6 @@
 import type { QualityTier, RoutingDecision, RoutingRequest, RoutingReason } from '../shared/types.js';
-import { ROUTE_PROTOTYPES, TIER_ORDER, tierAtLeast } from '../router/policies.js';
+import { ROUTE_PROTOTYPES, TIER_ORDER } from '../router/policies.js';
+import { fuseLocalScores } from './fusion.js';
 
 export interface LocalModelOptions {
   enabled: boolean;
@@ -126,7 +127,7 @@ function routingText(request: RoutingRequest): string {
   ].filter(Boolean).join('\n').slice(0, 14_000);
 }
 
-function normalizeScores(values: Readonly<Record<QualityTier, number>>): Record<QualityTier, number> {
+function softmaxModelScores(values: Readonly<Record<QualityTier, number>>): Record<QualityTier, number> {
   const raw = TIER_ORDER.map((tier) => values[tier]);
   const max = Math.max(...raw);
   const exponentials = raw.map((value) => Math.exp(value - max));
@@ -164,7 +165,7 @@ async function scoutScores(text: string): Promise<Record<QualityTier, number> | 
     if (!input) return null;
     const raw = {} as Record<QualityTier, number>;
     TIER_ORDER.forEach((tier, index) => { raw[tier] = dot(input, rows[index + 1] ?? []) * 5; });
-    return normalizeScores(raw);
+    return softmaxModelScores(raw);
   } catch {
     return null;
   }
@@ -187,7 +188,7 @@ async function arbiterScores(text: string, candidates: readonly QualityTier[]): 
     const raw: Partial<Record<QualityTier, number>> = {};
     candidates.forEach((tier, index) => { raw[tier] = values[index] ?? Number.NEGATIVE_INFINITY; });
     const complete = Object.fromEntries(TIER_ORDER.map((tier) => [tier, raw[tier] ?? -12])) as Record<QualityTier, number>;
-    return normalizeScores(complete);
+    return softmaxModelScores(complete);
   } catch {
     return null;
   }
@@ -224,23 +225,6 @@ async function judgeTier(text: string, candidates: readonly QualityTier[]): Prom
   }
 }
 
-function capabilityFloor(decision: RoutingDecision): QualityTier {
-  let floor: QualityTier = 'fast';
-  if (decision.capabilities.files) floor = 'balanced';
-  if (decision.capabilities.vision || decision.capabilities.longContext || decision.capabilities.web) floor = 'deep';
-  return floor;
-}
-
-function rank(scores: Readonly<Record<QualityTier, number>>): Array<{ tier: QualityTier; score: number }> {
-  return TIER_ORDER.map((tier) => ({ tier, score: scores[tier] })).sort((left, right) => right.score - left.score);
-}
-
-function boundedDowngrade(candidate: QualityTier, baseline: QualityTier): QualityTier {
-  const candidateIndex = TIER_ORDER.indexOf(candidate);
-  const baselineIndex = TIER_ORDER.indexOf(baseline);
-  return candidateIndex < baselineIndex - 1 ? (TIER_ORDER[baselineIndex - 1] ?? baseline) : candidate;
-}
-
 export async function enhanceDecisionWithLocalModels(
   request: RoutingRequest,
   baseline: RoutingDecision,
@@ -251,37 +235,28 @@ export async function enhanceDecisionWithLocalModels(
   const scout = await scoutScores(text);
   if (!scout) return baseline;
 
-  const scoutRanked = rank(scout);
+  const scoutRanked = TIER_ORDER
+    .map((tier) => ({ tier, score: scout[tier] }))
+    .sort((left, right) => right.score - left.score);
   const candidateSet = new Set<QualityTier>([
     baseline.tier,
     ...scoutRanked.slice(0, 3).map((entry) => entry.tier),
   ]);
   const candidates = TIER_ORDER.filter((tier) => candidateSet.has(tier));
   const arbiter = await arbiterScores(text, candidates);
-  const raw = {} as Record<QualityTier, number>;
-  for (const tier of TIER_ORDER) {
-    raw[tier] = baseline.scores[tier] * 0.5 + scout[tier] * 0.28 + (arbiter?.[tier] ?? 0) * 0.22;
-  }
-  let fused = normalizeScores(raw);
-  let ranked = rank(fused);
-  let selected = ranked[0]?.tier ?? baseline.tier;
-  const margin = (ranked[0]?.score ?? 0) - (ranked[1]?.score ?? 0);
+  let fusion = fuseLocalScores(baseline, { scout, ...(arbiter ? { arbiter } : {}) });
   let usedJudge = false;
 
-  if (options.judgeEnabled && (baseline.shouldUseJudge || margin < 0.12)) {
-    const judged = await judgeTier(text, TIER_ORDER.filter((tier) => TIER_ORDER.indexOf(tier) >= TIER_ORDER.indexOf(capabilityFloor(baseline))));
+  if (options.judgeEnabled && (baseline.shouldUseJudge || fusion.margin < 0.12)) {
+    const judged = await judgeTier(text, TIER_ORDER);
     if (judged) {
-      raw[judged] += 0.45;
-      fused = normalizeScores(raw);
-      ranked = rank(fused);
-      selected = ranked[0]?.tier ?? judged;
+      fusion = fuseLocalScores(baseline, { scout, ...(arbiter ? { arbiter } : {}), judgedTier: judged });
       usedJudge = true;
     }
   }
 
-  selected = tierAtLeast(boundedDowngrade(selected, baseline.tier), capabilityFloor(baseline));
-  const finalRanked = rank(fused);
-  const finalMargin = (finalRanked[0]?.score ?? 0) - (finalRanked[1]?.score ?? 0);
+  const selected = fusion.tier;
+  const finalMargin = fusion.margin;
   const reasons: RoutingReason[] = [
     ...baseline.reasons,
     { code: 'local-scout', detail: 'A packaged local semantic model compared the request with Switchboard route policies.', weight: 0.28 },
@@ -293,10 +268,10 @@ export async function enhanceDecisionWithLocalModels(
     ...baseline,
     tier: selected,
     effort: ({ fast: 'low', balanced: 'medium', deep: 'high', max: 'max' } as const)[selected],
-    confidence: Math.min(0.98, Math.max(baseline.confidence, 0.62 + finalMargin * 1.6)),
+    confidence: fusion.confidence,
     shouldUseJudge: !usedJudge && (baseline.shouldUseJudge || finalMargin < 0.12),
     reasons: reasons.sort((left, right) => Math.abs(right.weight) - Math.abs(left.weight)),
-    scores: fused,
+    scores: fusion.scores,
   };
 }
 
