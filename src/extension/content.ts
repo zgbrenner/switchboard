@@ -1,6 +1,7 @@
-import { inspectFile } from '../files/inspect.js';
+import { FileInspectionClient } from '../files/worker-client.js';
+import { enhanceDecisionWithLocalModels } from '../models/runtime.js';
 import { routeRequest } from '../router/route.js';
-import type { FileInsight, QualityTier, RoutingDecision } from '../shared/types.js';
+import type { FileInsight, QualityTier, RoutingDecision, RoutingRequest } from '../shared/types.js';
 import type { SwitchboardSettings } from './settings.js';
 import { SwitchboardPanel } from './panel.js';
 import { getSiteAdapter } from './site-adapters.js';
@@ -15,6 +16,7 @@ let bypassOnce = false;
 let paused = false;
 let lastDecision: RoutingDecision | null = null;
 const capturedFiles = new Map<string, File>();
+const fileInspector = new FileInspectionClient();
 
 function fileKey(file: File): string {
   return `${file.name}:${file.size}:${file.lastModified}`;
@@ -43,23 +45,7 @@ const panel = new SwitchboardPanel({
 
 async function inspectCapturedFiles(): Promise<FileInsight[]> {
   if (!settings.inspectFiles) return [];
-  const results = await Promise.all([...capturedFiles.values()].map(async (file) => {
-    try {
-      return await inspectFile(file);
-    } catch (error) {
-      return {
-        name: file.name,
-        size: file.size,
-        detectedType: 'unknown' as const,
-        mediaType: file.type || 'application/octet-stream',
-        textLength: 0,
-        excerpt: '',
-        warnings: [error instanceof Error ? error.message : String(error)],
-        capabilities: { files: true, vision: file.type.startsWith('image/'), longContext: false },
-      };
-    }
-  }));
-  return results;
+  return Promise.all([...capturedFiles.values()].map((file) => fileInspector.inspect(file)));
 }
 
 async function manuallySelect(tier: QualityTier): Promise<void> {
@@ -89,28 +75,40 @@ function submitWithFreshControl(fallback: HTMLButtonElement): boolean {
   return true;
 }
 
+async function makeDecision(prompt: string): Promise<RoutingDecision> {
+  const files = await inspectCapturedFiles();
+  const context = settings.useRecentContext ? adapter.collectRecentContext(4) : [];
+  const request: RoutingRequest = {
+    prompt,
+    context,
+    files,
+    preferences: { policy: settings.policy, categoryBoosts: settings.categoryBoosts },
+  };
+  const baseline = routeRequest(request);
+  return enhanceDecisionWithLocalModels(request, baseline, {
+    enabled: settings.semanticModels,
+    judgeEnabled: settings.judgeEnabled,
+  });
+}
+
 async function handleSend(button: HTMLButtonElement): Promise<void> {
   if (handling || paused || !settings.enabled) return;
   const prompt = adapter.readPrompt();
   if (!prompt) return;
   handling = true;
-  panel.setStatus('Routing locally', 'Inspecting the prompt and attachments on this device…');
+  panel.setStatus('Routing locally', 'Inspecting the prompt, attachments, and packaged local routing models on this device…');
 
   try {
-    const files = await inspectCapturedFiles();
-    const context = settings.useRecentContext ? adapter.collectRecentContext(4) : [];
-    const decision = routeRequest({
-      prompt,
-      context,
-      files,
-      preferences: { policy: settings.policy, categoryBoosts: settings.categoryBoosts },
-    });
+    const decision = await makeDecision(prompt);
     lastDecision = decision;
     const existingConversation = adapter.conversationHasHistory();
     const recommendationOnly = settings.conservativeExistingConversation && existingConversation;
+    const usedNeuralModels = decision.reasons.some((reason) => reason.code === 'local-scout');
     let note = decision.shouldUseJudge
-      ? 'The deterministic and semantic signals were close, so Switchboard is being conservative.'
-      : 'Selected from local deterministic and semantic signals.';
+      ? 'The local signals were close, so Switchboard is being conservative.'
+      : usedNeuralModels
+        ? 'Selected from deterministic rules and two packaged local routing models.'
+        : 'Selected from local deterministic and semantic signals; packaged model assets were unavailable or disabled.';
 
     if (settings.autoSwitch && !recommendationOnly) {
       const switched = await adapter.switchToTier(decision.tier);
@@ -159,3 +157,5 @@ document.addEventListener('keydown', (event) => {
   event.stopImmediatePropagation();
   void handleSend(button);
 }, true);
+
+window.addEventListener('pagehide', () => fileInspector.dispose(), { once: true });

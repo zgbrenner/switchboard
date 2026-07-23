@@ -7,5 +7,6 @@ dist/
 training/generated/
 training/output/
 model-packs/generated/
+model-packs/local/
 .venv/
 release/

@@ -12,5 +12,5 @@ export type SwitchboardMessage =
 export interface SwitchboardStatus {
   version: string;
   localOnly: true;
-  modelPacks: 'not-installed';
+  modelPacks: 'optional-local';
 }

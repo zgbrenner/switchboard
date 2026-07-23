@@ -19,6 +19,8 @@ async function load(): Promise<void> {
   checkbox('useRecentContext').checked = settings.useRecentContext;
   checkbox('conservativeExistingConversation').checked = settings.conservativeExistingConversation;
   checkbox('showReasons').checked = settings.showReasons;
+  checkbox('semanticModels').checked = settings.semanticModels;
+  checkbox('judgeEnabled').checked = settings.judgeEnabled;
   const policy = form.elements.namedItem('policy');
   if (policy instanceof HTMLSelectElement) policy.value = settings.policy;
 }
@@ -36,6 +38,8 @@ form.addEventListener('submit', (event) => {
       useRecentContext: checkbox('useRecentContext').checked,
       conservativeExistingConversation: checkbox('conservativeExistingConversation').checked,
       showReasons: checkbox('showReasons').checked,
+      semanticModels: checkbox('semanticModels').checked,
+      judgeEnabled: checkbox('judgeEnabled').checked,
       policy: policy instanceof HTMLSelectElement ? policy.value as SwitchboardSettings['policy'] : current.policy,
     };
     await chrome.runtime.sendMessage({ type: 'save-settings', settings });
