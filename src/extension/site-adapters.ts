@@ -1,5 +1,5 @@
 import type { ConversationTurn, QualityTier } from '../shared/types.js';
-import { rankModelLabels, type SupportedSite } from './model-selection.js';
+import { isModelSelectionConfirmed, rankModelLabels, scoreModelPickerLabel, type SupportedSite } from './model-selection.js';
 
 export type { SupportedSite } from './model-selection.js';
 
@@ -47,23 +47,75 @@ function findSendButton(selectors: readonly string[]): HTMLButtonElement | null 
 }
 
 function candidatePicker(selectors: readonly string[]): HTMLElement | null {
-  const selected = findFirst(selectors);
-  if (selected) return selected;
+  const seen = new Set<Element>();
+  const candidates = selectors
+    .flatMap((selector) => [...document.querySelectorAll(selector)])
+    .filter((element) => {
+      if (seen.has(element)) return false;
+      seen.add(element);
+      return visible(element) && !element.closest('#switchboard-root');
+    })
+    .map((element) => {
+      const metadata = [
+        element.getAttribute('aria-label'),
+        element.getAttribute('data-testid'),
+        textOf(element),
+      ].filter(Boolean).join(' ');
+      return { element: element as HTMLElement, score: scoreModelPickerLabel(metadata) };
+    })
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score);
+  if (candidates[0]) return candidates[0].element;
   return [...document.querySelectorAll('header button, nav button')]
     .filter(visible)
-    .find((button) => /model|gpt|claude|sonnet|opus|haiku|thinking|pro/i.test(textOf(button))) as HTMLElement | undefined ?? null;
+    .filter((element) => !element.closest('#switchboard-root'))
+    .map((element) => ({ element: element as HTMLElement, score: scoreModelPickerLabel(textOf(element)) }))
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => right.score - left.score)[0]?.element ?? null;
 }
 
 async function wait(milliseconds: number): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-async function selectVisibleModel(site: SupportedSite, picker: HTMLElement | null, tier: QualityTier): Promise<{ switched: boolean; model?: string; reason?: string }> {
+async function selectVisibleModel(
+  site: SupportedSite,
+  resolvePicker: () => HTMLElement | null,
+  tier: QualityTier,
+): Promise<{ switched: boolean; model?: string; reason?: string }> {
+  const picker = resolvePicker();
   if (!picker) return { switched: false, reason: 'The model picker was not found.' };
+  const beforeLabel = textOf(picker);
   picker.click();
   await wait(180);
-  const options = [...document.querySelectorAll('[role="menuitem"], [role="option"], [data-radix-collection-item], [data-headlessui-menu-item], [data-testid*="model"], div[tabindex="0"], button')]
+
+  const overlaySelectors = [
+    '[role="menu"]',
+    '[role="listbox"]',
+    '[data-radix-popper-content-wrapper]',
+    '[data-headlessui-portal]',
+  ];
+  const overlays = overlaySelectors
+    .flatMap((selector) => [...document.querySelectorAll(selector)])
     .filter(visible)
+    .filter((element) => !element.closest('#switchboard-root'));
+  const roots: ParentNode[] = overlays.length > 0 ? [overlays.at(-1) as HTMLElement] : [document.body];
+  const optionSelector = [
+    '[role="menuitem"]',
+    '[role="option"]',
+    '[data-radix-collection-item]',
+    '[data-headlessui-menu-item]',
+    '[data-testid*="model"]',
+    'button',
+  ].join(',');
+  const seen = new Set<Element>();
+  const options = roots
+    .flatMap((root) => [...root.querySelectorAll(optionSelector)])
+    .filter((element) => {
+      if (seen.has(element)) return false;
+      seen.add(element);
+      return element !== picker && visible(element) && !element.closest('#switchboard-root');
+    })
     .map((element) => ({ element: element as HTMLElement, label: textOf(element) }));
   const ranked = rankModelLabels(site, tier, options.map((option) => option.label));
   const bestRank = ranked[0];
@@ -72,9 +124,14 @@ async function selectVisibleModel(site: SupportedSite, picker: HTMLElement | nul
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     return { switched: false, reason: 'No compatible visible model option matched the route.' };
   }
+
   best.element.click();
-  await wait(120);
-  return { switched: true, model: best.label };
+  await wait(180);
+  const afterLabel = textOf(resolvePicker() ?? picker);
+  if (!isModelSelectionConfirmed(site, tier, beforeLabel, afterLabel)) {
+    return { switched: false, reason: `The model picker did not confirm the requested ${tier} route.` };
+  }
+  return { switched: true, model: afterLabel || best.label };
 }
 
 function collectTurns(userSelectors: readonly string[], assistantSelectors: readonly string[], limit: number): ConversationTurn[] {
@@ -99,7 +156,7 @@ function chatGptAdapter(): SiteAdapter {
     isSendTarget: (target) => Boolean(target.closest(sendSelectors.join(','))) || /^(send|submit)/i.test(textOf(target)),
     collectRecentContext: (limit) => collectTurns(['[data-message-author-role="user"]'], ['[data-message-author-role="assistant"]'], limit),
     conversationHasHistory: () => document.querySelectorAll('[data-message-author-role]').length > 1,
-    switchToTier: (tier) => selectVisibleModel('chatgpt', candidatePicker(['button[data-testid*="model"]', 'header button[aria-haspopup="menu"]', 'button[aria-label*="model" i]']), tier),
+    switchToTier: (tier) => selectVisibleModel('chatgpt', () => candidatePicker(['button[data-testid*="model"]', 'header button[aria-haspopup="menu"]', 'button[aria-label*="model" i]']), tier),
   };
 }
 
@@ -114,7 +171,7 @@ function claudeAdapter(): SiteAdapter {
     isSendTarget: (target) => Boolean(target.closest(sendSelectors.join(','))) || /^(send|submit)/i.test(textOf(target)),
     collectRecentContext: (limit) => collectTurns(['[data-testid="user-message"]', '.font-user-message'], ['[data-testid="assistant-message"]', '.font-claude-response'], limit),
     conversationHasHistory: () => document.querySelectorAll('[data-testid$="message"], .font-user-message, .font-claude-response').length > 1,
-    switchToTier: (tier) => selectVisibleModel('claude', candidatePicker(['button[aria-label*="model" i]', 'button[data-testid*="model"]', 'header button[aria-haspopup="menu"]']), tier),
+    switchToTier: (tier) => selectVisibleModel('claude', () => candidatePicker(['button[aria-label*="model" i]', 'button[data-testid*="model"]', 'header button[aria-haspopup="menu"]']), tier),
   };
 }
 
