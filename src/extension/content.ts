@@ -65,6 +65,16 @@ async function manuallySelect(tier: QualityTier): Promise<void> {
   panel.setStatus('Model selected', result.model ?? `Selected ${tier}.`);
 }
 
+function submitWithFreshControl(fallback: HTMLButtonElement): boolean {
+  const current = adapter.findSendButton();
+  const button = current ?? (fallback.isConnected ? fallback : null);
+  if (!button || button.disabled) return false;
+  bypassOnce = true;
+  button.click();
+  queueMicrotask(() => { bypassOnce = false; });
+  return true;
+}
+
 async function makeDecision(prompt: string): Promise<RoutingDecision> {
   const files = await inspectCapturedFiles();
   const context = settings.useRecentContext ? adapter.collectRecentContext(4) : [];
@@ -109,13 +119,14 @@ async function handleSend(button: HTMLButtonElement): Promise<void> {
       note = `Recommended ${decision.tier}; existing-conversation protection left the current model unchanged.`;
     }
     panel.showDecision(decision, note, settings.showReasons);
-    capturedFiles.clear();
-    bypassOnce = true;
-    button.click();
+    if (submitWithFreshControl(button)) {
+      capturedFiles.clear();
+    } else {
+      panel.showError('Routing completed, but the send control changed. Press Send again to continue safely.');
+    }
   } catch (error) {
     panel.showError(error instanceof Error ? error.message : String(error));
-    bypassOnce = true;
-    button.click();
+    if (submitWithFreshControl(button)) capturedFiles.clear();
   } finally {
     handling = false;
   }
