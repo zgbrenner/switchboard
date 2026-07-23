@@ -1,6 +1,6 @@
 {
   "name": "switchboard-extension",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "Privacy-first local model router for ChatGPT and Claude.",
@@ -8,16 +8,24 @@
     "clean": "node scripts/clean.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node scripts/test.mjs",
+    "models:fetch:core": "node scripts/fetch-models.mjs core",
+    "models:fetch:all": "node scripts/fetch-models.mjs all",
+    "models:fetch:judge": "node scripts/fetch-models.mjs judge",
+    "models:verify": "node scripts/verify-models.mjs",
     "build": "node scripts/build.mjs",
-    "verify": "npm run typecheck && npm test && npm run benchmark -- --strict && npm run verify:python && npm run build && npm run verify:extension",
+    "verify": "npm run typecheck && npm test && npm run benchmark -- --strict && npm run verify:python && npm run models:verify && npm run build && npm run verify:extension",
     "verify:extension": "node scripts/verify-extension.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "verify:python": "python -m unittest discover -s training/tests -v && python -m compileall -q training",
     "prepare:training": "python -m training.prepare_data",
     "package": "npm run verify && node scripts/package-release.mjs"
   },
+  "dependencies": {
+    "@huggingface/transformers": "4.2.0"
+  },
   "devDependencies": {
-    "typescript": "^5.8.3"
+    "esbuild": "0.28.1",
+    "typescript": "5.8.3"
   },
   "engines": {
     "node": ">=22"

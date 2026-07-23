@@ -14,13 +14,16 @@
       <label><input name="autoSwitch" type="checkbox"><span><strong>Switch models automatically</strong><small>Use visible model-picker controls and verify the result.</small></span></label>
       <label><input name="conservativeExistingConversation" type="checkbox"><span><strong>Protect existing conversations</strong><small>Recommend instead of switching when a conversation already has history.</small></span></label>
       <label class="select-row"><span><strong>Default policy</strong><small>Controls quality, latency, and premium-model preferences.</small></span><select name="policy"><option value="best">Best quality</option><option value="balanced">Balanced</option><option value="fast">Fast</option><option value="conserve">Conserve premium use</option></select></label>
+      <h2>Local intelligence</h2>
+      <label><input name="semanticModels" type="checkbox"><span><strong>Use packaged Scout and Arbiter models</strong><small>Run a sentence encoder and cross-encoder locally. Falls back to deterministic routing if their verified assets are absent.</small></span></label>
+      <label><input name="judgeEnabled" type="checkbox"><span><strong>Use optional local Judge</strong><small>Load the larger 135M model only for ambiguous routes. Requires the optional Judge pack.</small></span></label>
       <h2>Local context</h2>
-      <label><input name="inspectFiles" type="checkbox"><span><strong>Inspect attached files locally</strong><small>Detect type using extension, MIME, and magic bytes, then extract bounded text.</small></span></label>
+      <label><input name="inspectFiles" type="checkbox"><span><strong>Inspect attached files locally</strong><small>Verify type using extension, MIME, and magic bytes, then extract bounded content in an isolated worker.</small></span></label>
       <label><input name="useRecentContext" type="checkbox"><span><strong>Use recent conversation context</strong><small>Read up to four recent turns on the page. Nothing is transmitted elsewhere.</small></span></label>
       <label><input name="showReasons" type="checkbox"><span><strong>Show routing reasons</strong><small>Display the strongest local signals beside the composer.</small></span></label>
       <div class="actions"><button type="submit">Save settings</button><button id="clear-data" type="button" class="danger">Delete all local data</button><span id="save-status"></span></div>
     </form></section>
-    <section class="privacy"><h2>Privacy boundary</h2><p>Switchboard has no server, analytics, account, or telemetry. It stores settings and derived category preferences only. It does not store prompt text, extracted file text, assistant responses, or browsing history.</p></section>
+    <section class="privacy"><h2>Privacy boundary</h2><p>Switchboard has no server, analytics, account, or telemetry. Model weights, prompt analysis, file conversion, and route selection remain in the browser. It stores settings and derived category preferences only.</p></section>
   </main>
   <script type="module" src="js/extension/options.js"></script>
 </body>

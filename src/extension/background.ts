@@ -20,7 +20,7 @@ chrome.runtime.onMessage.addListener((message: SwitchboardMessage, _sender, send
         sendResponse(await clearSwitchboardData());
         break;
       case 'get-status': {
-        const status: SwitchboardStatus = { version: '0.1.0', localOnly: true, modelPacks: 'not-installed' };
+        const status: SwitchboardStatus = { version: '0.2.0', localOnly: true, modelPacks: 'optional-local' };
         sendResponse(status);
         break;
       }
