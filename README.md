@@ -15,6 +15,7 @@ The repository contains a complete dependency-light Manifest V3 foundation:
 - Local-only preference learning from manual overrides without retaining prompt text
 - Popup and options interfaces with data deletion and conservative existing-conversation behavior
 - Model-pack contracts that require immutable source revisions and SHA-256 hashes
+- A 32-case strict router benchmark and reproducible Scout/Arbiter training and ONNX export toolchain
 
 The first release uses the deterministic and semantic-prototype router by default. The neural Scout, Arbiter, and Judge stages are defined as local model packs and will be added after their task-specific checkpoints are trained, converted, benchmarked, and packaged.
 
@@ -81,6 +82,8 @@ Detailed documents:
 - [Architecture](docs/architecture/overview.md)
 - [File inspection](docs/architecture/file-inspection.md)
 - [Model roadmap](docs/architecture/model-roadmap.md)
+- [Training toolchain](training/README.md)
+- [Router benchmark](benchmarks/README.md)
 - [Privacy and threat model](docs/privacy.md)
 - [Research notes](docs/research.md)
 - [Contributing](CONTRIBUTING.md)

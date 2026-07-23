@@ -3,3 +3,8 @@ dist/
 .test-dist/
 *.zip
 .DS_Store
+
+training/generated/
+training/output/
+model-packs/generated/
+.venv/

@@ -9,8 +9,11 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "node scripts/test.mjs",
     "build": "node scripts/build.mjs",
-    "verify": "npm run typecheck && npm test && npm run build && npm run verify:extension",
-    "verify:extension": "node scripts/verify-extension.mjs"
+    "verify": "npm run typecheck && npm test && npm run benchmark -- --strict && npm run verify:python && npm run build && npm run verify:extension",
+    "verify:extension": "node scripts/verify-extension.mjs",
+    "benchmark": "node scripts/benchmark.mjs",
+    "verify:python": "python -m unittest discover -s training/tests -v && python -m compileall -q training",
+    "prepare:training": "python -m training.prepare_data"
   },
   "devDependencies": {
     "typescript": "^5.8.3"
