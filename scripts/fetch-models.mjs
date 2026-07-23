@@ -24,7 +24,7 @@ const packs = {
     id: 'switchboard-arbiter-msmarco-minilm-l6-v2',
     stage: 'arbiter',
     repo: 'Xenova/ms-marco-MiniLM-L-6-v2',
-    revision: 'a091443',
+    revision: 'a09144355adeed5f58c8ed011d209bf8ee5a1fec',
     destination: 'switchboard/arbiter',
     quantization: 'uint8',
     assets: [
