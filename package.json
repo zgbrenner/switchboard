@@ -1,0 +1,21 @@
+{
+  "name": "switchboard-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Privacy-first local model router for ChatGPT and Claude.",
+  "scripts": {
+    "clean": "node scripts/clean.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node scripts/test.mjs",
+    "build": "node scripts/build.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run verify:extension",
+    "verify:extension": "node scripts/verify-extension.mjs"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
