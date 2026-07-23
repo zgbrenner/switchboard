@@ -8,6 +8,8 @@ const required = [
   manifest.options_page,
   ...(manifest.content_scripts ?? []).flatMap((entry) => [...(entry.js ?? []), ...(entry.css ?? [])]),
   'file-worker.js',
+  'LICENSE',
+  'THIRD_PARTY_NOTICES.md',
 ].filter(Boolean);
 
 for (const path of required) await access(join('dist', path));
@@ -39,4 +41,4 @@ const runtimeSource = await readFile('src/models/runtime.ts', 'utf8');
 if (!/allowRemoteModels\s*=\s*false/.test(runtimeSource)) throw new Error('The local model runtime does not explicitly disable remote model loading.');
 if (!/localModelPath\s*=\s*chrome\.runtime\.getURL\(['"]models\//.test(runtimeSource)) throw new Error('The local model runtime is not pinned to packaged extension assets.');
 
-console.log(`Verified ${required.length} manifest resources, isolated file worker, packaged WASM runtime, least-privilege permissions, local-only model configuration, and no remote executable imports.`);
+console.log(`Verified ${required.length} manifest resources, isolated file worker, packaged notices, packaged WASM runtime, least-privilege permissions, local-only model configuration, and no remote executable imports.`);
