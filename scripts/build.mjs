@@ -19,6 +19,7 @@ async function findFiles(directory, predicate) {
 
 await rm('dist', { recursive: true, force: true });
 await mkdir('dist/styles', { recursive: true });
+await mkdir('dist/licenses', { recursive: true });
 
 await build({
   entryPoints: {
@@ -46,6 +47,8 @@ await cp('extension/options.html', 'dist/options.html');
 await cp('styles', 'dist/styles', { recursive: true });
 await cp('LICENSE', 'dist/LICENSE');
 await cp('THIRD_PARTY_NOTICES.md', 'dist/THIRD_PARTY_NOTICES.md');
+await cp('node_modules/@huggingface/transformers/LICENSE', 'dist/licenses/transformers-js-Apache-2.0.txt');
+await cp('node_modules/onnxruntime-web/LICENSE', 'dist/licenses/onnxruntime-web-MIT.txt');
 
 if (await exists('model-packs/local')) {
   await cp('model-packs/local', 'dist/models', { recursive: true });
