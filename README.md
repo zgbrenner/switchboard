@@ -15,11 +15,12 @@ The repository contains a working Manifest V3 foundation with:
 - File-type verification using extension, declared MIME type, and magic bytes
 - ZIP central-directory checks that reject path traversal, excessive expansion, extreme compression ratios, unsupported compression, and oversized archives before extraction
 - Isolated file conversion with a hard timeout and metadata-only fallback
-- ChatGPT and Claude site adapters that discover the composer, intercept send, inspect locally, select a visible model, and fail safely when the UI changes
+- ChatGPT and Claude site adapters that discover the composer, intercept send, inspect locally, select a visible model, verify the current control, and fail safely when the UI changes
 - Local-only preference learning from manual overrides without retaining prompt text
 - Popup and options interfaces with data deletion and conservative existing-conversation behavior
 - Model-pack contracts that require immutable source revisions and SHA-256 hashes
 - A strict router benchmark and reproducible Scout and Arbiter training and ONNX export toolchain
+- Reproducible extension ZIP packaging with a SHA-256 checksum
 
 The checked-in bootstrap models provide immediate semantic routing. The training toolchain remains the path to replacing them with smaller task-specific Ettin checkpoints after those checkpoints outperform the deterministic and bootstrap baselines.
 
@@ -54,7 +55,13 @@ npm install
 npm run verify
 ```
 
-The unpacked extension is written to `dist/`.
+The unpacked extension is written to `dist/`. Create a reproducible install archive and SHA-256 file with:
+
+```bash
+npm run package
+```
+
+Release artifacts are written to `release/`.
 
 ## Install locally
 
