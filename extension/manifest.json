@@ -1,10 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Switchboard",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Privacy-first local model routing for ChatGPT and Claude.",
   "permissions": ["storage"],
   "host_permissions": ["https://chatgpt.com/*", "https://claude.ai/*"],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "background": {
     "service_worker": "js/extension/background.js",
     "type": "module"
@@ -24,7 +27,13 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["js/extension/*", "js/router/*", "js/files/*", "js/shared/*", "js/models/*"],
+      "resources": [
+        "js/extension/content.js",
+        "file-worker.js",
+        "models/*",
+        "models/**/*",
+        "wasm/*"
+      ],
       "matches": ["https://chatgpt.com/*", "https://claude.ai/*"]
     }
   ]
