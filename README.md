@@ -22,7 +22,7 @@ The repository contains a working Manifest V3 foundation with:
 - A strict router benchmark and reproducible Scout and Arbiter training and ONNX export toolchain
 - Reproducible extension ZIP packaging with a SHA-256 checksum
 
-The checked-in bootstrap models provide immediate semantic routing. The training toolchain remains the path to replacing them with smaller task-specific Ettin checkpoints after those checkpoints outperform the deterministic and bootstrap baselines.
+The bootstrap model configuration provides immediate semantic routing after its model assets are fetched during development. The training toolchain remains the path to replacing those general-purpose models with smaller task-specific Ettin checkpoints after the new checkpoints outperform the deterministic and bootstrap baselines.
 
 ## Build
 
