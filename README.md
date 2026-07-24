@@ -16,12 +16,14 @@ The MCP server exposes:
 
 - `route_request`, which returns an abstract `fast`, `balanced`, `deep`, or `max` tier
 - Required capabilities such as web, files, vision, long context, and code
-- Calibrated confidence, effort, task categories, scores, and concise routing reasons
-- Read-only routing-policy and capability resources
-- A reusable `route_before_answering` prompt
-- Local stdio and stateless localhost Streamable HTTP transports
+- Confidence, effort, task categories, scores, and concise routing reasons
+- Optional concrete model ranking from a host-supplied model inventory
+- Read-only routing-policy, capability, and server/privacy resources
+- A reusable `route_before_answering` prompt with policy completion
+- Stateful local stdio and Streamable HTTP transports
+- Secure HTTP session IDs, protocol-version validation, expiry, deletion, and optional bearer authentication
 
-It does not persist request content or call a remote routing service. See [MCP server documentation](docs/mcp.md).
+It does not persist request content, model inventories, or tool results, and it does not call a remote routing service. See [MCP server documentation](docs/mcp.md).
 
 ## Existing extension foundation
 
@@ -50,7 +52,7 @@ npm run verify
 
 ## Privacy boundary
 
-Switchboard has no account, analytics, advertising, or telemetry. Prompt text, context, extracted attachment text, tool results, assistant responses, and browsing history are not persisted. MCP stdio writes only JSON-RPC messages to standard output and sends diagnostics to standard error.
+Switchboard has no account, analytics, advertising, or telemetry. Prompt text, context, extracted attachment text, model inventories, tool results, assistant responses, and browsing history are not persisted. MCP stdio writes only JSON-RPC messages to standard output and sends diagnostics to standard error.
 
 ## Documentation
 
