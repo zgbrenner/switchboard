@@ -124,6 +124,7 @@ export function enhanceDecision(decision, options) {
     compatibility: { additiveFrom: '0.4.0', responseContract: API_VERSION },
     effectiveProfile: options.profile.name,
     effectivePolicy: options.policy,
+    learningAdjustment: options.learningAdjustment ?? { applied: false, bias: 0, reason: 'disabled-or-no-history' },
     confidenceEvidence: confidenceEvidence(profiled),
     executionPlan,
     budgetAssessment,
