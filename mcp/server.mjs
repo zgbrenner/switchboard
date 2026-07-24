@@ -9,6 +9,7 @@ const { routeRequest } = await import(routerModuleUrl);
 import { compareDecisions, explainDecision, validateModelInventory } from './diagnostics.mjs';
 import { enhanceDecision, applyProfileFloor, SWITCHBOARD_API_VERSION } from './enhance.mjs';
 import { evaluateRouter } from './evaluation.mjs';
+import { getPreferenceStore, normalizeOverrideArguments, OVERRIDE_INPUT_SCHEMA } from './learning.mjs';
 import { resolveModelInventory } from './models.mjs';
 import { ROUTE_OUTPUT_SCHEMA_V05 } from './output-schema.mjs';
 import { applyProfile, listProfiles } from './profiles.mjs';
@@ -30,7 +31,7 @@ export const SERVER_INFO = {
   name: 'switchboard',
   title: 'Switchboard Router',
   version: '0.5.0',
-  description: 'Local privacy-first request planning, model routing, diagnostics, and evaluation for AI hosts.',
+  description: 'Local privacy-first request planning, model routing, diagnostics, evaluation, and aggregate preference learning for AI hosts.',
   websiteUrl: 'https://github.com/zgbrenner/switchboard',
 };
 
@@ -55,6 +56,7 @@ const API_METADATA = {
   compatibility: {
     additiveFrom: '0.4.0',
     policy: 'Existing request fields and response fields are retained. New response fields are additive.',
+    deprecationNotice: 'Fields will not be removed from this contract without a new contract version and an announced migration period.',
   },
 };
 
@@ -63,7 +65,15 @@ const SERVER_METADATA = {
   api: API_METADATA,
   protocolVersions: [...SUPPORTED_PROTOCOL_VERSIONS],
   transports: ['stdio', 'streamable-http'],
-  tools: ['route_request', 'explain_route', 'compare_routes', 'simulate_policy', 'validate_model_inventory', 'evaluate_router'],
+  tools: [
+    'route_request', 'explain_route', 'compare_routes', 'simulate_policy', 'validate_model_inventory', 'evaluate_router',
+    'record_override', 'get_preference_state', 'reset_preference_state',
+  ],
+  adapterContract: {
+    type: 'host-supplied-model-inventory',
+    providerSpecificCodeRequired: false,
+    fields: ['id', 'title', 'family', 'tier', 'effortLevels', 'capabilities', 'relativeCost', 'relativeLatency', 'available'],
+  },
   privacy: {
     localRouting: true,
     persistsPrompts: false,
@@ -71,6 +81,7 @@ const SERVER_METADATA = {
     persistsFileExcerpts: false,
     persistsModelInventories: false,
     persistsEvaluationCases: false,
+    persistsAggregatePreferencesOnlyWhenConfigured: true,
     telemetry: false,
     remoteInference: false,
   },
@@ -84,52 +95,28 @@ function toolResult(value) { return { content: [{ type: 'text', text: JSON.strin
 function toolError(message) { return { content: [{ type: 'text', text: message }], isError: true }; }
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const WRITE_AGGREGATE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+const RESET_AGGREGATE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
+const EMPTY_INPUT_SCHEMA = { type: 'object', additionalProperties: false, properties: {} };
 
 function toolDefinitions() {
   return [
     {
       name: 'route_request',
       title: 'Route AI Request',
-      description: 'Classify a request locally and return tier, effort, capabilities, confidence evidence, an execution plan, a budget assessment, and an optional concrete model recommendation.',
+      description: 'Classify a request locally and return tier, effort, capabilities, confidence evidence, an execution plan, a budget assessment, aggregate-learning metadata, and an optional concrete model recommendation.',
       inputSchema: ROUTE_INPUT_SCHEMA,
       outputSchema: ROUTE_OUTPUT_SCHEMA_V05,
       annotations: READ_ONLY,
     },
-    {
-      name: 'explain_route',
-      title: 'Explain Route',
-      description: 'Route a request and return a concise explanation plus structured evidence for the decision.',
-      inputSchema: ROUTE_INPUT_SCHEMA,
-      annotations: READ_ONLY,
-    },
-    {
-      name: 'compare_routes',
-      title: 'Compare Routes',
-      description: 'Compare two to eight policy or profile variants for the same request.',
-      inputSchema: COMPARISON_INPUT_SCHEMA,
-      annotations: READ_ONLY,
-    },
-    {
-      name: 'simulate_policy',
-      title: 'Simulate Policies',
-      description: 'Simulate selected policy or profile variants for the same request without changing any state.',
-      inputSchema: COMPARISON_INPUT_SCHEMA,
-      annotations: READ_ONLY,
-    },
-    {
-      name: 'validate_model_inventory',
-      title: 'Validate Model Inventory',
-      description: 'Validate and summarize a provider-independent model inventory without routing a prompt.',
-      inputSchema: INVENTORY_INPUT_SCHEMA,
-      annotations: READ_ONLY,
-    },
-    {
-      name: 'evaluate_router',
-      title: 'Evaluate Router',
-      description: 'Evaluate up to 100 labeled routing cases and return under-routing, over-routing, capability recall, exact-tier accuracy, and a confusion matrix.',
-      inputSchema: EVALUATION_INPUT_SCHEMA,
-      annotations: READ_ONLY,
-    },
+    { name: 'explain_route', title: 'Explain Route', description: 'Route a request and return a concise explanation plus structured evidence.', inputSchema: ROUTE_INPUT_SCHEMA, annotations: READ_ONLY },
+    { name: 'compare_routes', title: 'Compare Routes', description: 'Compare two to eight policy or profile variants for the same request.', inputSchema: COMPARISON_INPUT_SCHEMA, annotations: READ_ONLY },
+    { name: 'simulate_policy', title: 'Simulate Policies', description: 'Simulate selected policy or profile variants without changing state.', inputSchema: COMPARISON_INPUT_SCHEMA, annotations: READ_ONLY },
+    { name: 'validate_model_inventory', title: 'Validate Model Inventory', description: 'Validate and summarize a provider-independent model inventory without routing a prompt.', inputSchema: INVENTORY_INPUT_SCHEMA, annotations: READ_ONLY },
+    { name: 'evaluate_router', title: 'Evaluate Router', description: 'Evaluate up to 100 labeled routing cases and return safety and quality metrics.', inputSchema: EVALUATION_INPUT_SCHEMA, annotations: READ_ONLY },
+    { name: 'record_override', title: 'Record Aggregate Override', description: 'Record category-level upgrade or downgrade feedback. Does not accept or store prompt text.', inputSchema: OVERRIDE_INPUT_SCHEMA, annotations: WRITE_AGGREGATE },
+    { name: 'get_preference_state', title: 'Get Aggregate Preference State', description: 'Read category-level aggregate preference weights and counters.', inputSchema: EMPTY_INPUT_SCHEMA, annotations: READ_ONLY },
+    { name: 'reset_preference_state', title: 'Reset Aggregate Preference State', description: 'Delete all aggregate preference weights and counters.', inputSchema: EMPTY_INPUT_SCHEMA, annotations: RESET_AGGREGATE },
   ];
 }
 
@@ -157,24 +144,27 @@ function completion(params) {
 export function createSwitchboardMcpSession(options = {}) {
   const route = options.route ?? routeRequest;
   const lifecycle = options.lifecycle ?? 'stateful';
+  const preferenceStore = options.preferenceStore ?? getPreferenceStore(options.preferencePath);
   let protocolVersion = CURRENT_PROTOCOL_VERSION;
   let phase = lifecycle === 'stateless' ? 'ready' : 'new';
 
   async function routeNormalized(normalized) {
     const applied = applyProfile(normalized.request, normalized.profile);
     const rawDecision = await route(applied.request);
-    const flooredDecision = applyProfileFloor(rawDecision, applied.profile);
+    const learned = await preferenceStore.apply(rawDecision);
+    const flooredDecision = applyProfileFloor(learned.decision, applied.profile);
     const modelResolution = resolveModelInventory(flooredDecision, normalized.availableModels, {
       policy: applied.request.preferences.policy,
       currentModelId: normalized.currentModelId,
       hasContext: applied.request.context.length > 0,
     });
-    return enhanceDecision(rawDecision, {
+    return enhanceDecision(learned.decision, {
       profile: applied.profile,
       policy: applied.request.preferences.policy,
       budget: normalized.budget,
       planMode: normalized.planMode,
       modelResolution,
+      learningAdjustment: learned.learning,
     });
   }
 
@@ -192,6 +182,9 @@ export function createSwitchboardMcpSession(options = {}) {
       const cases = normalizeEvaluationArguments(args);
       return await evaluateRouter(cases, async (testCase) => await routeNormalized(testCase));
     }
+    if (name === 'record_override') return await preferenceStore.record(normalizeOverrideArguments(args));
+    if (name === 'get_preference_state') return await preferenceStore.snapshot();
+    if (name === 'reset_preference_state') return await preferenceStore.reset();
     throw new Error(`Unknown tool: ${name}`);
   }
 
@@ -220,7 +213,7 @@ export function createSwitchboardMcpSession(options = {}) {
             protocolVersion,
             capabilities: { tools: {}, resources: {}, prompts: {}, completions: {} },
             serverInfo: SERVER_INFO,
-            instructions: 'Call route_request before a task when model or reasoning selection is available. Switchboard recommendations are advisory; the MCP host remains responsible for choosing and invoking a model.',
+            instructions: 'Call route_request before a task when model or reasoning selection is available. Switchboard recommendations and execution plans are advisory; the host remains responsible for choosing and invoking a model.',
           });
         }
         case 'notifications/initialized':
@@ -231,7 +224,7 @@ export function createSwitchboardMcpSession(options = {}) {
         case 'tools/list': return isNotification ? null : success(id, { tools: toolDefinitions() });
         case 'tools/call': {
           if (isNotification) return null;
-          try { return success(id, toolResult(await callTool(params.name, params.arguments))); }
+          try { return success(id, toolResult(await callTool(params.name, params.arguments ?? {}))); }
           catch (error) { return success(id, toolError(error instanceof Error ? error.message : 'Tool call failed.')); }
         }
         case 'resources/list':
@@ -240,6 +233,8 @@ export function createSwitchboardMcpSession(options = {}) {
             { uri: 'switchboard://profiles', name: 'profiles', title: 'Switchboard Routing Profiles', mimeType: 'application/json' },
             { uri: 'switchboard://capabilities', name: 'capabilities', title: 'Switchboard Capability Requirements', mimeType: 'application/json' },
             { uri: 'switchboard://api', name: 'api', title: 'Switchboard API Compatibility', mimeType: 'application/json' },
+            { uri: 'switchboard://adapter-contract', name: 'adapter-contract', title: 'Switchboard Host Model Adapter Contract', mimeType: 'application/json' },
+            { uri: 'switchboard://preferences', name: 'preferences', title: 'Switchboard Aggregate Preference State', mimeType: 'application/json' },
             { uri: 'switchboard://server', name: 'server', title: 'Switchboard Server Metadata', mimeType: 'application/json' },
           ] });
         case 'resources/read': {
@@ -249,8 +244,10 @@ export function createSwitchboardMcpSession(options = {}) {
             'switchboard://profiles': listProfiles(),
             'switchboard://capabilities': CAPABILITY_DESCRIPTIONS,
             'switchboard://api': API_METADATA,
+            'switchboard://adapter-contract': SERVER_METADATA.adapterContract,
             'switchboard://server': SERVER_METADATA,
           };
+          if (params.uri === 'switchboard://preferences') resources[params.uri] = await preferenceStore.snapshot();
           if (!Object.hasOwn(resources, params.uri)) return failure(id, -32002, 'Resource not found', { uri: params.uri });
           return success(id, { contents: [{ uri: params.uri, mimeType: 'application/json', text: JSON.stringify(resources[params.uri], null, 2) }] });
         }
