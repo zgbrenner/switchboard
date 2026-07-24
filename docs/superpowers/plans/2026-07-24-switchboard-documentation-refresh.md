@@ -1,5 +1,7 @@
 # Switchboard 0.4 Documentation Refresh Plan
 
+**Status:** Documentation refresh complete and reviewed; final fast-forward merge is the remaining publication step.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to execute this plan. Steps use checkbox syntax for status tracking.
 
 **Goal:** Align all user-facing Switchboard documentation with the merged MCP 0.4.0 implementation.
@@ -23,44 +25,45 @@
 
 **Files:** `README.md`, `docs/README.md`
 
-- [ ] Rewrite the root README around MCP 0.4.0.
-- [ ] Add quick starts for stdio and stateful Streamable HTTP.
-- [ ] Explain optional model inventory resolution and the advisory-host limitation.
-- [ ] Add a documentation index with current, secondary, roadmap, and historical sections.
+- [x] Rewrite the root README around MCP 0.4.0.
+- [x] Add quick starts for stdio and stateful Streamable HTTP.
+- [x] Explain optional model inventory resolution and the advisory-host limitation.
+- [x] Add a documentation index with current, secondary, roadmap, and historical sections.
 
 ### Task 2: Authoritative MCP reference
 
 **Files:** `docs/mcp.md`
 
-- [ ] Add an explicit 0.4.0 status block.
-- [ ] Add the stateful HTTP request sequence and required headers.
-- [ ] Add security guidance for bearer tokens and non-loopback binding.
-- [ ] Clarify model inventory ranking, unknown capabilities, lifecycle, resources, completion, and limitations.
+- [x] Add an explicit 0.4.0 status block.
+- [x] Add the stateful HTTP request sequence and required headers.
+- [x] Add security guidance for bearer tokens and non-loopback binding.
+- [x] Clarify model inventory ranking, unknown capabilities, lifecycle, resources, completion, and limitations.
 
 ### Task 3: Architecture and privacy
 
 **Files:** `docs/architecture/overview.md`, `docs/privacy.md`
 
-- [ ] Rewrite architecture around the shared router and MCP-first data flow.
-- [ ] Separate stdio, HTTP, and browser-extension runtime boundaries.
-- [ ] Document stateful HTTP metadata, in-memory routing data, and non-persistence guarantees.
-- [ ] Separate MCP network controls from browser-extension permissions.
+- [x] Rewrite architecture around the shared router and MCP-first data flow.
+- [x] Separate stdio, HTTP, and browser-extension runtime boundaries.
+- [x] Document stateful HTTP metadata, in-memory routing data, and non-persistence guarantees.
+- [x] Separate MCP network controls from browser-extension permissions.
 
 ### Task 4: Secondary subsystems and roadmap
 
 **Files:** `docs/architecture/file-inspection.md`, `docs/architecture/model-roadmap.md`, `training/README.md`, `benchmarks/README.md`, `docs/research.md`
 
-- [ ] Clarify that MCP accepts bounded file metadata/excerpts but does not open arbitrary local files.
-- [ ] Scope browser file inspection to the extension foundation.
-- [ ] Scope local neural models and training as optional roadmap work.
-- [ ] Explain that benchmarks test the shared router and MCP protocol tests cover the server surface.
-- [ ] Add MCP specification and secure transport design to research notes.
+- [x] Clarify that MCP accepts bounded file metadata/excerpts but does not open arbitrary local files.
+- [x] Scope browser file inspection to the extension foundation.
+- [x] Scope local neural models and training as optional roadmap work.
+- [x] Explain that benchmarks test the shared router and MCP protocol tests cover the server surface.
+- [x] Add MCP specification and secure transport design to research notes.
 
 ### Task 5: Contribution guidance and verification
 
 **Files:** `CONTRIBUTING.md`
 
-- [ ] Add MCP lifecycle, schema, model-resolution, and HTTP security contribution rules.
-- [ ] Document focused verification commands and the complete local gate.
-- [ ] Require documentation updates for public MCP behavior changes.
-- [ ] Review the branch diff to confirm documentation-only scope and fast-forward merge to `main`.
+- [x] Add MCP lifecycle, schema, model-resolution, and HTTP security contribution rules.
+- [x] Document focused verification commands and the complete local gate.
+- [x] Require documentation updates for public MCP behavior changes.
+- [x] Review the branch diff and confirm documentation-only scope.
+- [ ] Fast-forward merge the documentation branch to `main`.
