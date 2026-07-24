@@ -14,15 +14,24 @@ async function call(session, id, method, params) {
   return await session.handle(request(id, method, params));
 }
 
+async function readySession(protocolVersion = '2025-11-25') {
+  const session = createSwitchboardMcpSession();
+  await call(session, 0, 'initialize', { protocolVersion, capabilities: {}, clientInfo: { name: 'test-client', version: '1.0.0' } });
+  await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  return session;
+}
+
+function httpHeaders(extra = {}) {
+  return { 'content-type': 'application/json', accept: 'application/json, text/event-stream', origin: 'http://localhost', ...extra };
+}
+
 test('initializes with current MCP capabilities and negotiates compatible versions', async () => {
   const session = createSwitchboardMcpSession();
   const response = await call(session, 1, 'initialize', {
-    protocolVersion: '2025-11-25',
-    capabilities: {},
-    clientInfo: { name: 'test-client', version: '1.0.0' },
+    protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test-client', version: '1.0.0' },
   });
   assert.equal(response.result.protocolVersion, '2025-11-25');
-  assert.deepEqual(response.result.capabilities, { tools: {}, resources: {}, prompts: {} });
+  assert.deepEqual(response.result.capabilities, { tools: {}, resources: {}, prompts: {}, completions: {} });
   assert.equal(response.result.serverInfo.name, 'switchboard');
   assert.match(response.result.instructions, /route_request/);
 
@@ -34,32 +43,30 @@ test('initializes with current MCP capabilities and negotiates compatible versio
 });
 
 test('lists and calls the route_request tool with structured and text content', async () => {
-  const session = createSwitchboardMcpSession();
+  const session = await readySession();
   const listed = await call(session, 1, 'tools/list', {});
   assert.deepEqual(listed.result.tools.map((tool) => tool.name), ['route_request']);
   assert.equal(listed.result.tools[0].annotations.readOnlyHint, true);
 
   const response = await call(session, 2, 'tools/call', {
-    name: 'route_request',
-    arguments: { prompt: 'Fix the grammar in this sentence: She go to work.' },
+    name: 'route_request', arguments: { prompt: 'Fix the grammar in this sentence: She go to work.' },
   });
   assert.equal(response.result.isError, false);
   assert.equal(response.result.structuredContent.tier, 'fast');
   assert.equal(response.result.structuredContent.effort, 'low');
-  assert.equal(response.result.content[0].type, 'text');
+  assert.equal(response.result.structuredContent.modelResolution.status, 'not-provided');
   assert.deepEqual(JSON.parse(response.result.content[0].text), response.result.structuredContent);
 });
 
 test('normalizes bounded context, files, policies, and category boosts', async () => {
-  const session = createSwitchboardMcpSession();
+  const session = await readySession();
   const response = await call(session, 1, 'tools/call', {
     name: 'route_request',
     arguments: {
       prompt: 'Now redo that using the other interpretation.',
       context: [{ role: 'user', text: 'Perform a detailed legal comparison.' }],
       files: [{ name: 'memo.pdf', size: 200000, detectedType: 'pdf', textLength: 30000, excerpt: 'contract clauses', capabilities: { vision: true, longContext: true } }],
-      policy: 'best',
-      categoryBoosts: { legal: 0.2 },
+      policy: 'best', categoryBoosts: { legal: 0.2 },
     },
   });
   assert.equal(response.result.structuredContent.capabilities.files, true);
@@ -69,7 +76,7 @@ test('normalizes bounded context, files, policies, and category boosts', async (
 });
 
 test('returns tool errors for invalid arguments without crashing the MCP session', async () => {
-  const session = createSwitchboardMcpSession();
+  const session = await readySession();
   const invalid = await call(session, 1, 'tools/call', { name: 'route_request', arguments: { prompt: '' } });
   assert.equal(invalid.result.isError, true);
   assert.match(invalid.result.content[0].text, /prompt/i);
@@ -82,9 +89,9 @@ test('returns tool errors for invalid arguments without crashing the MCP session
 });
 
 test('exposes routing resources and one reusable routing prompt', async () => {
-  const session = createSwitchboardMcpSession();
+  const session = await readySession();
   const resources = await call(session, 1, 'resources/list', {});
-  assert.deepEqual(resources.result.resources.map((resource) => resource.uri), ['switchboard://policies', 'switchboard://capabilities']);
+  assert.deepEqual(resources.result.resources.map((resource) => resource.uri), ['switchboard://policies', 'switchboard://capabilities', 'switchboard://server']);
   const read = await call(session, 2, 'resources/read', { uri: 'switchboard://policies' });
   assert.equal(read.result.contents[0].mimeType, 'application/json');
   assert.deepEqual(Object.keys(JSON.parse(read.result.contents[0].text)), ['best', 'balanced', 'fast', 'conserve']);
@@ -97,44 +104,40 @@ test('exposes routing resources and one reusable routing prompt', async () => {
 });
 
 test('uses standard JSON-RPC errors for unknown methods and missing resources', async () => {
-  const session = createSwitchboardMcpSession();
+  const session = await readySession();
   const unknown = await call(session, 1, 'unknown/method', {});
   assert.equal(unknown.error.code, -32601);
   const missing = await call(session, 2, 'resources/read', { uri: 'switchboard://missing' });
   assert.equal(missing.error.code, -32002);
-  const notification = await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
-  assert.equal(notification, null);
+  assert.equal(await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
 });
 
-test('serves stateless Streamable HTTP on localhost and rejects untrusted origins', async (t) => {
+test('serves stateful Streamable HTTP on localhost and rejects untrusted origins', async (t) => {
   const server = startHttpServer({ host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   t.after(() => server.close());
   const address = server.address();
-  assert.ok(address && typeof address === 'object');
   const url = `http://127.0.0.1:${address.port}/mcp`;
 
   const initialize = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', origin: 'http://localhost' },
+    method: 'POST', headers: httpHeaders(),
     body: JSON.stringify(request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'http-test', version: '1' } })),
   });
   assert.equal(initialize.status, 200);
-  assert.equal((await initialize.json()).result.serverInfo.name, 'switchboard');
+  assert.equal((await initialize.clone().json()).result.serverInfo.name, 'switchboard');
+  const sessionId = initialize.headers.get('mcp-session-id');
+
+  const initialized = await fetch(url, {
+    method: 'POST', headers: httpHeaders({ 'mcp-session-id': sessionId, 'mcp-protocol-version': '2025-11-25' }),
+    body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
+  });
+  assert.equal(initialized.status, 202);
 
   const blocked = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', origin: 'https://attacker.example' },
+    method: 'POST', headers: httpHeaders({ origin: 'https://attacker.example', 'mcp-session-id': sessionId, 'mcp-protocol-version': '2025-11-25' }),
     body: JSON.stringify(request(2, 'ping', {})),
   });
   assert.equal(blocked.status, 403);
-
-  const notification = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
-  });
-  assert.equal(notification.status, 202);
 });
 
 test('stdio transport emits only newline-delimited JSON-RPC and recovers after parse errors', async () => {
@@ -160,12 +163,15 @@ test('HTTP transport rejects unsupported protocol headers and non-POST polling',
   t.after(() => server.close());
   const address = server.address();
   const url = `http://127.0.0.1:${address.port}/mcp`;
+  const initialize = await fetch(url, {
+    method: 'POST', headers: httpHeaders(),
+    body: JSON.stringify(request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'http-test', version: '1' } })),
+  });
+  const sessionId = initialize.headers.get('mcp-session-id');
   const invalidVersion = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-protocol-version': '1999-01-01' },
-    body: JSON.stringify(request(1, 'ping', {})),
+    method: 'POST', headers: httpHeaders({ 'mcp-session-id': sessionId, 'mcp-protocol-version': '1999-01-01' }),
+    body: JSON.stringify(request(2, 'ping', {})),
   });
   assert.equal(invalidVersion.status, 400);
-  const get = await fetch(url);
-  assert.equal(get.status, 405);
+  assert.equal((await fetch(url)).status, 405);
 });
