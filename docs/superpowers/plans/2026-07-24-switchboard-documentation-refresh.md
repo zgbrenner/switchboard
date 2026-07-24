@@ -1,6 +1,6 @@
 # Switchboard 0.4 Documentation Refresh Plan
 
-**Status:** Documentation refresh complete and reviewed; final fast-forward merge is the remaining publication step.
+**Status:** Completed and merged to `main` on July 24, 2026.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to execute this plan. Steps use checkbox syntax for status tracking.
 
@@ -66,4 +66,4 @@
 - [x] Document focused verification commands and the complete local gate.
 - [x] Require documentation updates for public MCP behavior changes.
 - [x] Review the branch diff and confirm documentation-only scope.
-- [ ] Fast-forward merge the documentation branch to `main`.
+- [x] Fast-forward merge the documentation branch to `main`.
