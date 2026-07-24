@@ -37,6 +37,24 @@ const stageSchema = {
     optional: { type: 'boolean' },
   },
 };
+const negotiationSchema = {
+  type: 'object', additionalProperties: false,
+  required: ['requiredCapabilities', 'eligibleCount', 'rejected'],
+  properties: {
+    requiredCapabilities: { type: 'array', uniqueItems: true, items: { type: 'string', enum: CAPABILITIES } },
+    eligibleCount: { type: 'integer', minimum: 0, maximum: 64 },
+    rejected: {
+      type: 'array', maxItems: 64,
+      items: {
+        type: 'object', additionalProperties: false, required: ['id', 'reasons'],
+        properties: {
+          id: { type: 'string' },
+          reasons: { type: 'array', minItems: 1, uniqueItems: true, items: { type: 'string' } },
+        },
+      },
+    },
+  },
+};
 
 export const ROUTE_OUTPUT_SCHEMA_V05 = {
   $schema: JSON_SCHEMA,
@@ -97,11 +115,12 @@ export const ROUTE_OUTPUT_SCHEMA_V05 = {
       },
     },
     modelResolution: {
-      type: 'object', additionalProperties: false, required: ['status', 'recommended', 'alternatives'],
+      type: 'object', additionalProperties: false, required: ['status', 'recommended', 'alternatives', 'negotiation'],
       properties: {
         status: { type: 'string', enum: ['not-provided', 'recommended', 'no-compatible-model'] },
         recommended: { anyOf: [modelSchema, { type: 'null' }] },
         alternatives: { type: 'array', maxItems: 3, items: modelSchema },
+        negotiation: negotiationSchema,
       },
     },
   },
