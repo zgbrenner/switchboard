@@ -1,9 +1,9 @@
 {
   "name": "switchboard-extension",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "Privacy-first local AI request and model router with MCP and browser extension interfaces.",
+  "description": "Privacy-first local AI request planning, model routing, diagnostics, and evaluation with MCP and browser extension interfaces.",
   "bin": {
     "switchboard-mcp": "mcp/index.mjs"
   },
