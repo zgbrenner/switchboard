@@ -14,6 +14,7 @@ async function initializedSession() {
     protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'hardening-test', version: '1.0.0' },
   }));
   assert.equal(initialized.result.protocolVersion, '2025-11-25');
+  assert.equal(initialized.result.serverInfo.version, '0.5.0');
   assert.equal(await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
   return session;
 }
@@ -121,20 +122,25 @@ test('empty or incompatible model inventories return explicit resolution states'
   assert.equal(incompatible.result.structuredContent.modelResolution.recommended, null);
 });
 
-test('server metadata resource, detailed output schema, and policy completion are discoverable', async () => {
+test('server metadata resource, additive output schema, and policy completion are discoverable', async () => {
   const session = await initializedSession();
   const tools = await session.handle(request(2, 'tools/list', {}));
   const output = tools.result.tools[0].outputSchema;
   assert.equal(output.$schema, 'https://json-schema.org/draft/2020-12/schema');
-  assert.equal(output.properties.modelResolution.properties.status.enum.includes('recommended'), true);
+  assert.equal(output.required.includes('modelResolution'), true);
+  assert.equal(output.required.includes('executionPlan'), true);
+  assert.equal(output.required.includes('confidenceEvidence'), true);
   assert.equal(output.properties.capabilities.additionalProperties, false);
 
   const resources = await session.handle(request(3, 'resources/list', {}));
   assert.equal(resources.result.resources.some((resource) => resource.uri === 'switchboard://server'), true);
+  assert.equal(resources.result.resources.some((resource) => resource.uri === 'switchboard://api'), true);
   const server = await session.handle(request(4, 'resources/read', { uri: 'switchboard://server' }));
   const metadata = JSON.parse(server.result.contents[0].text);
   assert.equal(metadata.privacy.persistsPrompts, false);
+  assert.equal(metadata.privacy.persistsEvaluationCases, false);
   assert.equal(metadata.protocolVersions.includes('2025-11-25'), true);
+  assert.equal(metadata.api.current, '2026-07-24');
 
   const completion = await session.handle(request(5, 'completion/complete', {
     ref: { type: 'ref/prompt', name: 'route_before_answering' }, argument: { name: 'policy', value: 'b' },
