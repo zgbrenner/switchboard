@@ -1,9 +1,12 @@
 {
   "name": "switchboard-extension",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
-  "description": "Privacy-first local model router for ChatGPT and Claude.",
+  "description": "Privacy-first local AI request router with MCP and browser extension interfaces.",
+  "bin": {
+    "switchboard-mcp": "mcp/index.mjs"
+  },
   "scripts": {
     "clean": "node scripts/clean.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
@@ -13,12 +16,15 @@
     "models:fetch:judge": "node scripts/fetch-models.mjs judge",
     "models:verify": "node scripts/verify-models.mjs",
     "build": "node scripts/build.mjs",
-    "verify": "npm run typecheck && npm test && npm run benchmark -- --strict && npm run verify:python && npm run models:verify && npm run build && npm run verify:extension",
+    "verify": "npm run typecheck && npm test && npm run benchmark -- --strict && npm run verify:python && npm run models:verify && npm run build && npm run verify:extension && npm run mcp:smoke",
     "verify:extension": "node scripts/verify-extension.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "verify:python": "python -m unittest discover -s training/tests -v && python -m compileall -q training",
     "prepare:training": "python -m training.prepare_data",
-    "package": "npm run verify && node scripts/package-release.mjs"
+    "package": "npm run verify && node scripts/package-release.mjs",
+    "mcp:start": "node mcp/index.mjs --transport=stdio",
+    "mcp:http": "node mcp/index.mjs --transport=http",
+    "mcp:smoke": "node scripts/mcp-smoke.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "4.2.0"
