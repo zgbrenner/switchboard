@@ -1,5 +1,9 @@
 # Switchboard MCP hardening design
 
+**Status:** Implemented in Switchboard MCP 0.4.0 and merged to `main` on July 24, 2026.
+
+> Historical design record. Current product behavior is documented in `README.md`, `docs/README.md`, and `docs/mcp.md`.
+
 ## Goal
 
 Make Switchboard a more universal, standards-compliant local MCP router without adding browser automation, an API gateway, or any remote service.
@@ -12,7 +16,7 @@ The Streamable HTTP transport uses cryptographically random stateful session IDs
 
 ## Universal model resolution
 
-`route_request` continues to return provider-independent tier, effort, capabilities, confidence, reasons, and scores. It additionally accepts an optional bounded inventory of models available to the MCP host. Each model may declare tier, supported effort levels, capabilities, relative cost, relative latency, family, and availability. Switchboard ranks compatible models while heavily penalizing under-capable choices, respecting the selected routing policy, and preferring the current model when it already satisfies the request.
+`route_request` returns provider-independent tier, effort, capabilities, confidence, reasons, and scores. It additionally accepts an optional bounded inventory of models available to the MCP host. Each model may declare tier, supported effort levels, capabilities, relative cost, relative latency, family, and availability. Switchboard ranks compatible models while heavily penalizing under-capable choices, respecting the selected routing policy, and preferring the current model when it already satisfies the request.
 
 The result always contains a `modelResolution` object with one of three states: `not-provided`, `recommended`, or `no-compatible-model`. This remains advisory because MCP hosts retain control over model invocation.
 
@@ -27,7 +31,7 @@ The server exposes:
 
 ## Privacy and scope
 
-Switchboard does not persist prompt text, context, file excerpts, model inventories, or routing results. HTTP sessions retain only protocol and lifecycle metadata. No telemetry, external inference, remote routing, provider credentials, browser code, or gateway behavior is added.
+Switchboard does not persist prompt text, context, file excerpts, model inventories, or routing results. HTTP sessions retain only protocol and lifecycle metadata. No telemetry, external inference, remote routing, provider credentials, browser code, or gateway behavior was added by this work.
 
 ## Verification
 
