@@ -20,23 +20,18 @@ function closestEffort(desired, supported) {
 
 function policyWeights(policy) {
   switch (policy) {
-    case 'best':
-      return { above: -6, cost: 0.5, latency: 0.5 };
-    case 'fast':
-      return { above: 6, cost: 2, latency: 6 };
-    case 'conserve':
-      return { above: 8, cost: 7, latency: 2 };
+    case 'best': return { above: -6, cost: 0.5, latency: 0.5 };
+    case 'fast': return { above: 6, cost: 2, latency: 6 };
+    case 'conserve': return { above: 8, cost: 7, latency: 2 };
     case 'balanced':
-    default:
-      return { above: 2.5, cost: 3, latency: 2 };
+    default: return { above: 2.5, cost: 3, latency: 2 };
   }
 }
 
 function publicCandidate(candidate, score, decision, unknownCapabilities) {
   const selectedEffort = closestEffort(decision.effort, candidate.effortLevels);
   const meetsTier = indexOf(TIER_ORDER, candidate.tier) >= indexOf(TIER_ORDER, decision.tier);
-  const meetsEffort = indexOf(EFFORT_ORDER, selectedEffort) >= indexOf(EFFORT_ORDER, decision.effort)
-    || candidate.effortLevels.length === 0;
+  const meetsEffort = indexOf(EFFORT_ORDER, selectedEffort) >= indexOf(EFFORT_ORDER, decision.effort) || candidate.effortLevels.length === 0;
   return {
     id: candidate.id,
     ...(candidate.title ? { title: candidate.title } : {}),
@@ -51,18 +46,36 @@ function publicCandidate(candidate, score, decision, unknownCapabilities) {
   };
 }
 
+function negotiation(decision, eligibleCount, rejected) {
+  return {
+    requiredCapabilities: CAPABILITY_KEYS.filter((key) => decision.capabilities?.[key]),
+    eligibleCount,
+    rejected,
+  };
+}
+
 export function resolveModelInventory(decision, models, options = {}) {
-  if (models === undefined) return { status: 'not-provided', recommended: null, alternatives: [] };
-  if (models.length === 0) return { status: 'no-compatible-model', recommended: null, alternatives: [] };
+  if (models === undefined) return {
+    status: 'not-provided', recommended: null, alternatives: [],
+    negotiation: negotiation(decision, 0, []),
+  };
+  if (models.length === 0) return {
+    status: 'no-compatible-model', recommended: null, alternatives: [],
+    negotiation: negotiation(decision, 0, []),
+  };
 
   const policy = options.policy ?? 'balanced';
   const weights = policyWeights(policy);
   const requiredTier = indexOf(TIER_ORDER, decision.tier);
   const desiredEffort = indexOf(EFFORT_ORDER, decision.effort);
   const ranked = [];
+  const rejected = [];
 
   for (const candidate of models) {
-    if (candidate.available === false) continue;
+    if (candidate.available === false) {
+      rejected.push({ id: candidate.id, reasons: ['unavailable'] });
+      continue;
+    }
     const hardMissing = [];
     const unknownCapabilities = [];
     for (const key of CAPABILITY_KEYS) {
@@ -70,7 +83,10 @@ export function resolveModelInventory(decision, models, options = {}) {
       if (candidate.capabilities[key] === false) hardMissing.push(key);
       else if (candidate.capabilities[key] !== true) unknownCapabilities.push(key);
     }
-    if (hardMissing.length > 0) continue;
+    if (hardMissing.length > 0) {
+      rejected.push({ id: candidate.id, reasons: hardMissing.map((key) => `missing:${key}`) });
+      continue;
+    }
 
     const candidateTier = indexOf(TIER_ORDER, candidate.tier);
     const below = Math.max(0, requiredTier - candidateTier);
@@ -88,10 +104,12 @@ export function resolveModelInventory(decision, models, options = {}) {
   }
 
   ranked.sort((left, right) => left.score - right.score || left.id.localeCompare(right.id));
-  if (ranked.length === 0) return { status: 'no-compatible-model', recommended: null, alternatives: [] };
+  const details = negotiation(decision, ranked.length, rejected);
+  if (ranked.length === 0) return { status: 'no-compatible-model', recommended: null, alternatives: [], negotiation: details };
   return {
     status: 'recommended',
     recommended: ranked[0],
     alternatives: ranked.slice(1, 4),
+    negotiation: details,
   };
 }
