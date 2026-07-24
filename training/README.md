@@ -1,30 +1,57 @@
-# Switchboard model training
+# Experimental Switchboard model training
 
-This directory contains a reproducible starting toolchain for the local Scout and Arbiter models. The 32-case browser-router benchmark is a smoke-test seed, not enough data for a production checkpoint.
+The MCP server does not require trained neural models. Switchboard MCP 0.4.0 routes requests with the shared deterministic and lightweight semantic engine and can rank a host-supplied model inventory without downloading model weights.
 
-## 1. Prepare seed data
+This directory contains experimental tooling for task-specific local Scout and Arbiter models. It supports research and future model-pack development; it is not part of the MCP installation path and its outputs are not enabled by default.
+
+## Intended model roles
+
+### Scout
+
+A compact encoder intended to estimate:
+
+- Abstract route tier
+- Required capabilities
+- Task family
+- Confidence
+- Out-of-distribution evidence
+
+### Arbiter
+
+A compact cross-encoder intended to score a request against abstract route-policy descriptions when simpler evidence is ambiguous.
+
+Provider names and commercial model names must not be training labels.
+
+## Prepare seed data
 
 ```bash
 python -m training.prepare_data
 ```
 
-The command produces deterministic Scout examples and four route-policy pairs per example in `training/generated/`, which is intentionally ignored by Git.
+The command writes deterministic examples under `training/generated/`, which is intentionally ignored by Git.
 
-## 2. Expand and review the dataset
+The checked-in seed data and router smoke benchmark are not sufficient to train a production release model.
 
-Before training a release candidate, add properly licensed or authored examples covering:
+## Dataset requirements
+
+Before training a release candidate, use properly licensed or authored examples covering:
 
 - Simple transformations and low-risk requests
-- Difficult coding, legal, security, financial, and technical analysis
+- Adjacent-tier boundary cases
+- Difficult coding, legal, security, financial, medical, and technical analysis
 - Current research and primary-source verification
 - Attachments, scanned documents, images, and long context
-- Vague follow-ups and conflicting signals
+- Short context-dependent follow-ups
+- Conflicting speed and quality instructions
 - Multilingual and adversarial prompts
-- Boundary cases between every adjacent tier
+- Explicit capability mismatches
+- Out-of-distribution requests that should defer
 
-Keep a human-reviewed test set completely separate from teacher-generated labels.
+Keep source groups isolated across training, calibration, validation, and locked evaluation. A human-reviewed locked set must remain separate from teacher-generated labels.
 
-## 3. Install training dependencies
+Raw prompts from MCP users or extension users must not be collected automatically for training.
+
+## Install research dependencies
 
 ```bash
 python -m venv .venv
@@ -32,11 +59,13 @@ source .venv/bin/activate
 pip install -r training/requirements.txt
 ```
 
-## 4. Pin immutable model revisions
+## Pin immutable base revisions
 
-Resolve the exact Hugging Face commit for each base model. Never train or package from `main` or a moving tag.
+Resolve and record the exact Hugging Face commit for each base model. Never train or package from `main`, an unpinned branch, or a moving tag.
 
-## 5. Train Scout
+Candidate families documented elsewhere include compact Ettin encoders and rerankers. A candidate is not approved merely because it is small.
+
+## Train Scout
 
 ```bash
 python -m training.train_scout \
@@ -45,9 +74,9 @@ python -m training.train_scout \
   --validation training/generated/scout-validation.jsonl
 ```
 
-Scout is a standard nine-label classifier. Four labels represent mutually exclusive tiers and five represent capabilities. The browser runtime can interpret the first four logits with an argmax and the remaining logits with calibrated thresholds.
+The current experimental Scout design uses abstract tier and capability labels. Calibration thresholds must be derived from held-out data rather than copied from a teacher model.
 
-## 6. Train Arbiter
+## Train Arbiter
 
 ```bash
 python -m training.train_arbiter \
@@ -56,9 +85,9 @@ python -m training.train_arbiter \
   --validation training/generated/arbiter-validation.jsonl
 ```
 
-Arbiter is a binary cross-encoder that scores a request against each abstract route-policy description.
+The Arbiter scores a request against each provider-independent route-policy description.
 
-## 7. Export a verified pack
+## Export a verified pack
 
 ```bash
 python -m training.export_pack \
@@ -70,8 +99,77 @@ python -m training.export_pack \
   --source-revision <ETTIN_ENCODER_COMMIT>
 ```
 
-The exporter runs Optimum ONNX export and writes a manifest containing the immutable source revision, exact byte size, and SHA-256 digest of every asset. Quantization should be performed and benchmarked before changing the pack's quantization label.
+A pack manifest must include:
+
+- Immutable source repository and revision
+- Exact byte size of every asset
+- SHA-256 of every asset
+- Runtime and quantization metadata
+- Label ordering
+- Calibration values
+- Dataset revision and evaluation metrics
+
+Quantization labels must describe the actual exported artifact. Do not relabel an unquantized model without exporting and benchmarking the quantized graph.
+
+## Evaluation requirements
+
+Report at minimum:
+
+- Acceptable-route rate
+- Harmful under-routing
+- Wasteful over-routing
+- Weighted routing regret
+- Expected calibration error
+- Out-of-distribution deferral
+- Capability precision and recall
+- High-stakes subset results
+- Cold and warm latency
+- Peak memory
+- Final package size
+
+The most important failure is harmful under-routing. A smaller or faster model that routes consequential work too low should not ship.
+
+## Interface-specific validation
+
+### MCP or Node runtime
+
+Validate:
+
+- Local-only asset loading
+- Deterministic fallback when the pack is missing or corrupt
+- Cancellation and timeout behavior
+- No change to the public `route_request` output contract
+- Node latency and memory
+
+### Browser extension
+
+Also validate:
+
+- Transformers.js and ONNX Runtime Web compatibility
+- WASM fallback
+- WebGPU acceleration where available
+- Manifest V3 content-security policy
+- Worker/offscreen loading
+- Browser memory and cold start
+- Exact packaged resource exposure
 
 ## Release gate
 
-Do not enable a neural pack until it beats the deterministic baseline on a larger locked test set, reports harmful under-routing separately, has acceptable calibration, and passes both WebGPU and WASM memory and latency tests.
+Do not enable a trained model by default until it:
+
+1. Beats the deterministic and existing bootstrap baselines on a locked reviewed evaluation set.
+2. Meets the harmful-under-routing and calibration thresholds.
+3. Passes high-stakes, adversarial, multilingual, context, file, vision, coding, and research subsets.
+4. Meets runtime-specific size, latency, and memory limits.
+5. Has immutable and verified assets.
+6. Requires no remote inference or runtime download.
+7. Fails safely to the existing router.
+
+## Relationship to MCP model inventories
+
+Training a Switchboard router model is different from supplying `availableModels` to MCP:
+
+- A Switchboard router model improves the internal classification of the request.
+- `availableModels` describes concrete models the host can invoke.
+- The model inventory resolver remains deterministic and provider-independent.
+- A future neural router must still return the same abstract tier, effort, capability, and model-resolution schema.
