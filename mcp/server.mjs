@@ -10,6 +10,7 @@ import { compareDecisions, explainDecision, validateModelInventory } from './dia
 import { enhanceDecision, applyProfileFloor, SWITCHBOARD_API_VERSION } from './enhance.mjs';
 import { evaluateRouter } from './evaluation.mjs';
 import { resolveModelInventory } from './models.mjs';
+import { ROUTE_OUTPUT_SCHEMA_V05 } from './output-schema.mjs';
 import { applyProfile, listProfiles } from './profiles.mjs';
 import {
   COMPARISON_INPUT_SCHEMA,
@@ -17,7 +18,6 @@ import {
   INVENTORY_INPUT_SCHEMA,
   POLICIES,
   ROUTE_INPUT_SCHEMA,
-  ROUTE_OUTPUT_SCHEMA,
   normalizeComparisonArguments,
   normalizeEvaluationArguments,
   normalizeInventoryArguments,
@@ -92,7 +92,7 @@ function toolDefinitions() {
       title: 'Route AI Request',
       description: 'Classify a request locally and return tier, effort, capabilities, confidence evidence, an execution plan, a budget assessment, and an optional concrete model recommendation.',
       inputSchema: ROUTE_INPUT_SCHEMA,
-      outputSchema: ROUTE_OUTPUT_SCHEMA,
+      outputSchema: ROUTE_OUTPUT_SCHEMA_V05,
       annotations: READ_ONLY,
     },
     {
