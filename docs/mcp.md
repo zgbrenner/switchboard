@@ -1,18 +1,13 @@
 # Switchboard MCP server
 
-**Current version:** 0.4.0  
-**Primary tool:** `route_request`  
+**Current version:** 0.5.0  
+**Switchboard API contract:** `2026-07-24`  
 **Current MCP revision:** `2025-11-25`  
-**Compatible revisions:** `2025-06-18`, `2025-03-26`
+**Compatible MCP revisions:** `2025-06-18`, `2025-03-26`
 
-Switchboard exposes its local request router as an MCP server. It returns an abstract route and can optionally rank a concrete model inventory supplied by the host. It does not call a provider model, contact a remote routing service, or persist routing content.
+Switchboard is a local MCP server for request classification, execution planning, model-inventory ranking, diagnostics, and router evaluation. It does not invoke a provider model, operate a remote routing service, or persist routing content.
 
-The host remains responsible for:
-
-1. Deciding whether to call `route_request`.
-2. Supplying any model inventory it wants Switchboard to rank.
-3. Applying or ignoring the returned tier, effort, capability, and model recommendation.
-4. Invoking the selected model.
+The host remains responsible for deciding whether to call Switchboard, supplying accurate model metadata, applying or ignoring the result, and invoking any selected model.
 
 ## Requirements
 
@@ -25,17 +20,13 @@ npm install
 npm run build
 ```
 
-No model download is required for the MCP server.
+No model download is required for MCP operation.
 
 ## Stdio transport
-
-Run the entry point directly:
 
 ```bash
 node /absolute/path/to/switchboard/mcp/index.mjs --transport=stdio
 ```
-
-Example client configuration:
 
 ```json
 {
@@ -52,22 +43,18 @@ Example client configuration:
 }
 ```
 
-Standard output is reserved for newline-delimited MCP JSON-RPC messages. Diagnostics are written to standard error. Do not configure a client to launch the server through an unsilenced `npm run` command because npm may write non-protocol text to standard output.
+Standard output is reserved for newline-delimited JSON-RPC messages. Diagnostics go to standard error.
 
 ### Lifecycle
 
-A stateful stdio client should:
-
 1. Send `initialize`.
-2. Read the negotiated protocol revision and capabilities.
+2. Read the negotiated protocol revision and server capabilities.
 3. Send `notifications/initialized`.
-4. Call tools, resources, prompts, completions, or `ping`.
+4. Use tools, resources, prompts, completion, or `ping`.
 
-Before initialization, only `initialize` and `ping` are accepted. After the initialize response but before `notifications/initialized`, ordinary operations remain gated.
+Before initialization, only `initialize` and `ping` are accepted. Ordinary operations remain gated until `notifications/initialized` is received.
 
 ## Stateful Streamable HTTP
-
-Start the local HTTP server:
 
 ```bash
 node mcp/index.mjs --transport=http --host=127.0.0.1 --port=3764
@@ -91,44 +78,24 @@ node mcp/index.mjs \
   --max-sessions=256
 ```
 
-### HTTP session sequence
+### Session sequence
 
-1. Send an initialization POST without `MCP-Session-Id`.
-2. Read the `MCP-Session-Id` response header.
-3. Send `notifications/initialized` with both `MCP-Session-Id` and the negotiated `MCP-Protocol-Version`.
-4. Send all subsequent requests with the same two headers.
-5. Send `DELETE` with those headers to terminate the session explicitly.
+1. Send initialization without `MCP-Session-Id`.
+2. Read the returned `MCP-Session-Id` header.
+3. Send `notifications/initialized` with the session ID and negotiated `MCP-Protocol-Version`.
+4. Include both headers on later requests.
+5. Send `DELETE` with both headers to terminate the session.
 
-Every POST must include:
+Every POST includes:
 
 ```text
 Content-Type: application/json
 Accept: application/json, text/event-stream
 ```
 
-Requests after initialization must also include:
-
-```text
-MCP-Session-Id: <session-id>
-MCP-Protocol-Version: <negotiated-version>
-```
-
-The HTTP transport:
-
-- Generates cryptographically random session IDs.
-- Expires idle sessions after 30 minutes by default.
-- Allows 256 active sessions by default.
-- Rejects unknown, expired, or mismatched sessions.
-- Supports explicit session termination with `DELETE`.
-- Returns HTTP 405 for GET because Switchboard does not emit server-initiated SSE events.
-- Limits request bodies to 1 MiB.
-- Validates Host and Origin headers.
-- Binds to `127.0.0.1` by default.
-- Returns JSON responses while requiring clients to advertise both supported Streamable HTTP media types.
+The HTTP transport uses random session IDs, expires idle sessions after 30 minutes by default, limits active sessions to 256 by default, rejects unknown or mismatched sessions, validates Host and Origin, limits bodies to 1 MiB, and returns HTTP 405 for GET because Switchboard does not emit server-initiated SSE events.
 
 ### Bearer authentication
-
-Set a token through the environment:
 
 ```bash
 export SWITCHBOARD_MCP_TOKEN='a-long-random-secret'
@@ -141,35 +108,30 @@ Clients send:
 Authorization: Bearer a-long-random-secret
 ```
 
-A token can also be provided through `--token=...`, but the environment avoids exposing it in process arguments. Token comparison is timing-safe.
-
-Switchboard refuses to bind outside loopback unless bearer authentication is configured. Authentication does not replace Host and Origin validation.
-
-Additional Host and Origin values can be explicitly allowed:
+Token comparison is timing-safe. Switchboard refuses non-loopback binding without bearer authentication. Authentication does not replace Host and Origin validation.
 
 ```bash
 export SWITCHBOARD_MCP_ALLOWED_HOSTS='localhost,my-machine.local'
 export SWITCHBOARD_MCP_ALLOWED_ORIGINS='https://trusted-client.example'
 ```
 
-Do not expose the HTTP server broadly unless the network boundary, bearer token, Host allowlist, and Origin allowlist are intentionally configured.
+## API compatibility
 
-## MCP capabilities
+The Switchboard API contract is separate from the MCP protocol revision.
 
-Switchboard advertises:
+- Current contract: `2026-07-24`
+- Additive compatibility base: 0.4.0
+- Existing 0.4 request fields remain valid.
+- Existing 0.4 response fields remain present.
+- New 0.5 response fields are additive.
 
-- Tools
-- Resources
-- Prompts
-- Completions
-
-It also implements `ping`, cancellation notifications, structured tool output, strict input/output schemas, and lifecycle validation.
+The contract is available through `switchboard://api` and in every enhanced routing response.
 
 ## Tool: `route_request`
 
-`route_request` classifies a request and returns provider-independent routing metadata.
+`route_request` classifies and plans one request.
 
-### Basic input
+### Input
 
 ```json
 {
@@ -186,60 +148,94 @@ It also implements `ping`, cancellation notifications, structured tool output, s
       "detectedType": "markdown",
       "size": 24000,
       "textLength": 12000,
-      "excerpt": "Authentication and session architecture...",
-      "capabilities": {
-        "vision": false,
-        "longContext": false
-      }
+      "excerpt": "Authentication and session architecture..."
     }
   ],
+  "profile": "security",
   "policy": "balanced",
-  "categoryBoosts": {
-    "security": 0.1
+  "planMode": "multi",
+  "budget": {
+    "maxRelativeCost": 0.8,
+    "maxRelativeLatency": 0.8,
+    "minQuality": 0.7,
+    "maxStages": 3
   }
 }
 ```
 
-### Input limits
+### Input bounds
 
-- `prompt`: 1 to 64,000 characters and not whitespace-only
+- `prompt`: 1 to 64,000 characters; not whitespace-only
 - `context`: at most 8 turns and 32,000 aggregate characters
 - `files`: at most 20 entries
 - File excerpt: at most 4,000 characters per entry
 - `availableModels`: at most 64 entries
-- Category boosts: at most 64 bounded numeric values from `-0.35` to `0.35`
+- `budget.maxStages`: 1 through 4
+- Category boosts: at most 64 values from `-0.35` through `0.35`
 - Unknown properties are rejected
-- Invalid booleans, file types, duplicate effort levels, duplicate model IDs, and whitespace-only identifiers are rejected
+- Invalid booleans, types, duplicates, and whitespace-only identifiers are rejected
 
-The MCP server does not open file paths or read arbitrary files. `files` contains bounded metadata and excerpts already supplied by the host.
+The server does not open file paths. File metadata and excerpts must already be supplied by the host.
 
-## Optional host model inventory
+### Policies
 
-A host can ask Switchboard to convert the abstract route into a concrete recommendation:
+- `best`: prefer stronger options when they can materially improve quality
+- `balanced`: balance quality, cost, and latency
+- `fast`: prefer the fastest adequate route while preserving hard floors
+- `conserve`: protect stronger or premium models unless required
+
+### Profiles
+
+- `general`
+- `coding`
+- `legal`
+- `research`
+- `creative`
+- `security`
+- `finance`
+- `medical`
+- `low-cost`
+- `low-latency`
+
+Profiles can add category emphasis, raise a minimum tier, choose a default policy, or require a capability. Profiles do not lower deterministic capability or safety floors. An explicitly supplied `policy` overrides the profile default.
+
+### Budget
+
+All budget values except `maxStages` use normalized values from zero through one.
+
+- `maxRelativeCost`
+- `maxRelativeLatency`
+- `minQuality`
+- `maxStages`
+
+Budgets do not silently lower safety floors. `budgetAssessment` reports estimated normalized values and any `cost`, `latency`, or `quality` conflicts.
+
+### Plan modes
+
+- `single`: always return one completion stage
+- `auto`: use multiple stages for sufficiently complex work
+- `multi`: request staged analysis, refinement, and optional verification
+
+The host decides whether and how to execute the plan.
+
+### Confidence evidence
+
+In addition to the original scalar `confidence`, the result includes:
+
+- `scoreMargin`: separation between the highest and second-highest tier scores
+- `deterministicEvidence`: normalized strength of deterministic reasons
+- `capabilityCertainty`: certainty derived from detected hard requirements
+- `agreement`: combined evidence agreement score
+
+These fields make debugging and policy comparisons easier; they do not constitute a statistical guarantee of correctness.
+
+## Optional model inventory
+
+A host can include up to 64 models:
 
 ```json
 {
-  "prompt": "Audit this authentication flow and verify subtle failure modes.",
-  "policy": "balanced",
-  "currentModelId": "standard-model",
   "availableModels": [
-    {
-      "id": "fast-model",
-      "title": "Fast model",
-      "family": "general",
-      "tier": "fast",
-      "effortLevels": ["low"],
-      "capabilities": {
-        "web": false,
-        "files": true,
-        "vision": true,
-        "longContext": false,
-        "code": true
-      },
-      "relativeCost": 0.1,
-      "relativeLatency": 0.1,
-      "available": true
-    },
     {
       "id": "reasoning-model",
       "title": "Reasoning model",
@@ -263,117 +259,128 @@ A host can ask Switchboard to convert the abstract route into a concrete recomme
 
 Capability values mean:
 
-- `true`: support is confirmed.
-- `false`: lack of support is confirmed; the model is excluded when that capability is required.
-- Omitted: support is unknown; the model receives a ranking penalty but is not automatically excluded.
+- `true`: support is confirmed
+- `false`: lack of support is confirmed; the model is excluded when required
+- Omitted: support is unknown; the model is penalized but not automatically excluded
 
-### Ranking behavior
+Ranking excludes unavailable models and explicit capability misses, strongly penalizes tier and effort shortfalls, applies the selected cost-quality-latency policy, penalizes unknown required capabilities, and can prefer an adequate current model when context is supplied.
 
-Switchboard:
+Model IDs and provider names remain host data rather than hard-coded routing labels.
 
-1. Excludes unavailable models.
-2. Excludes models that explicitly lack a required capability.
-3. Strongly penalizes models below the required tier.
-4. Penalizes models that cannot meet the desired effort level.
-5. Penalizes unknown required capabilities.
-6. Applies the selected quality, cost, and latency policy.
-7. Prefers an adequate current model when recent context is supplied, reducing unnecessary model switching.
-8. Uses stable model IDs to break equal-score ties deterministically.
+## Tool: `explain_route`
 
-Model names and provider brands are never routing labels. They remain host-supplied inventory data.
+Uses the same input as `route_request` and returns:
 
-## Output
+- A concise explanation
+- Tier and effort
+- Required capabilities
+- Routing reasons
+- Confidence evidence
+- Model resolution
+- Execution plan
+- Budget assessment
+
+## Tools: `compare_routes` and `simulate_policy`
+
+Both accept a common request plus two to eight variants:
 
 ```json
 {
-  "tier": "deep",
-  "effort": "high",
-  "capabilities": {
-    "web": false,
-    "files": true,
-    "vision": false,
-    "longContext": false,
-    "code": true
-  },
-  "confidence": 0.91,
-  "shouldUseJudge": false,
-  "reasons": [],
-  "scores": {
-    "fast": 0.01,
-    "balanced": 0.08,
-    "deep": 0.82,
-    "max": 0.09
-  },
-  "taskCategories": ["code", "high-stakes", "files"],
-  "modelResolution": {
-    "status": "recommended",
-    "recommended": {
-      "id": "reasoning-model",
-      "title": "Reasoning model",
-      "family": "reasoning",
-      "tier": "deep",
-      "effort": "high",
-      "meetsRequirements": true,
-      "unknownCapabilities": [],
-      "relativeCost": 0.6,
-      "relativeLatency": 0.5,
-      "score": 4.3
-    },
-    "alternatives": []
-  }
+  "prompt": "Review this API design.",
+  "variants": [
+    { "label": "quality", "policy": "best", "profile": "security" },
+    { "label": "speed", "policy": "fast", "profile": "coding" }
+  ]
 }
 ```
 
-`modelResolution.status` is:
+The result reports each variant's tier, effort, confidence, model, budget fit, stage count, tier spread, distinct tiers and models, and variants with budget conflicts.
 
-- `not-provided`: no model inventory was supplied
-- `recommended`: at least one model was not ruled out by a required capability
-- `no-compatible-model`: every model is unavailable or explicitly lacks a required capability
+Neither tool changes stored state.
 
-The result is returned in both `structuredContent` and a JSON text block.
+## Tool: `validate_model_inventory`
 
-## Routing policies
+Accepts only `availableModels` and returns:
 
-- `best`: prefer higher-quality routes when they can materially improve the result
-- `balanced`: balance quality, latency, and premium model usage
-- `fast`: prefer the fastest adequate route while preserving hard floors
-- `conserve`: conserve stronger or premium usage unless required
+- Model and available-model counts
+- Tier distribution
+- Confirmed capability coverage
+- Unavailable IDs
+- Models with unknown capability declarations
+- Integration warnings
+
+Strict validation errors are returned as MCP tool errors.
+
+## Tool: `evaluate_router`
+
+Processes 1 through 100 labeled cases:
+
+```json
+{
+  "cases": [
+    {
+      "id": "security-audit",
+      "prompt": "Audit this authentication implementation.",
+      "profile": "security",
+      "expectedTier": "deep",
+      "requiredCapabilities": ["code"]
+    }
+  ]
+}
+```
+
+Output includes:
+
+- `caseCount`
+- `exactTierAccuracy`
+- Harmful under-routing count and rate
+- Over-routing count and rate
+- Capability recall
+- Tier confusion matrix
+- Per-case tier delta, missing capabilities, and pass/fail state
+
+Evaluation cases and expected labels are processed in memory and discarded.
 
 ## Resources
 
-- `switchboard://policies`: policy names and meanings
-- `switchboard://capabilities`: capability flag meanings
-- `switchboard://server`: version, supported protocol revisions, transports, and privacy guarantees
+- `switchboard://policies`
+- `switchboard://profiles`
+- `switchboard://capabilities`
+- `switchboard://api`
+- `switchboard://server`
 
 ## Prompt and completion
 
-`route_before_answering` returns a reusable user message instructing a host to call `route_request` before completing a supplied request.
+`route_before_answering` asks the host to call `route_request` before completing a supplied task. It accepts optional `policy` and `profile` arguments.
 
-`completion/complete` provides prefix completion for the prompt's `policy` argument: `best`, `balanced`, `fast`, and `conserve`.
+`completion/complete` provides prefix completion for policy and profile values.
 
 ## Privacy
 
-Switchboard processes each routing request in memory. It does not persist:
+Switchboard does not persist:
 
 - Prompt text
 - Conversation context
 - File excerpts
 - Model inventories
-- Route decisions
-- Tool results
+- Evaluation cases or expected labels
+- Routing decisions
+- Execution plans
+- Diagnostics or tool results
 - Embeddings
 - Browsing history
 
-HTTP sessions retain only session ID, lifecycle phase, negotiated protocol revision, and last-activity metadata. There is no database, account, telemetry, remote model call, or remote routing service.
+HTTP retains only session ID, lifecycle phase, negotiated protocol revision, and last-activity metadata. There is no database, account, telemetry, remote model call, or remote routing service.
 
 ## Limitations
 
-- MCP cannot guarantee that a host calls `route_request` before every request.
+- MCP cannot guarantee that a host calls Switchboard.
 - MCP cannot force a host to switch models or reasoning levels.
-- Model inventory descriptions are supplied by the host; inaccurate capability metadata can produce an inaccurate recommendation.
-- Switchboard does not execute the selected model.
+- Execution plans are advisory and are not executed by Switchboard.
+- Budget estimates are normalized comparative values, not provider billing forecasts.
+- Host-supplied capability, cost, and latency metadata can be inaccurate.
 - Switchboard does not inspect arbitrary local files through MCP.
-- The abstract router can still make mistakes; clients should preserve user overrides and safe fallbacks for consequential decisions.
+- The abstract router and evaluation labels can be wrong; consequential integrations should preserve user overrides and safe fallbacks.
 
 ## Verification
 
@@ -389,7 +396,7 @@ Complete repository gate:
 npm run verify
 ```
 
-Interactive testing with the MCP Inspector:
+MCP Inspector:
 
 ```bash
 npx @modelcontextprotocol/inspector --cli \
