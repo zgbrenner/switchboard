@@ -21,12 +21,14 @@ try {
     params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'switchboard-smoke', version: '1.0.0' } },
   });
   assert.equal(initialized.result.serverInfo.name, 'switchboard');
-  assert.equal(initialized.result.serverInfo.version, '0.4.0');
+  assert.equal(initialized.result.serverInfo.version, '0.5.0');
   child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
 
   const tools = await send({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} });
-  assert.deepEqual(tools.result.tools.map((tool) => tool.name), ['route_request']);
-  assert.equal(tools.result.tools[0].outputSchema.properties.modelResolution.properties.status.enum.includes('recommended'), true);
+  assert.deepEqual(tools.result.tools.map((tool) => tool.name), [
+    'route_request', 'explain_route', 'compare_routes', 'simulate_policy', 'validate_model_inventory', 'evaluate_router',
+  ]);
+  assert.equal(tools.result.tools[0].outputSchema.required.includes('executionPlan'), true);
 
   const routed = await send({
     jsonrpc: '2.0', id: 3, method: 'tools/call',
@@ -34,6 +36,9 @@ try {
       name: 'route_request',
       arguments: {
         prompt: 'Perform a focused security review and validate subtle authentication failures.',
+        profile: 'security',
+        planMode: 'multi',
+        budget: { maxRelativeCost: 0.8, maxRelativeLatency: 0.8, minQuality: 0.7, maxStages: 3 },
         availableModels: [
           { id: 'fast-text', tier: 'fast', capabilities: { code: false } },
           { id: 'deep-code', tier: 'deep', effortLevels: ['high'], capabilities: { code: true }, relativeCost: 0.5, relativeLatency: 0.5 },
@@ -41,16 +46,25 @@ try {
       },
     },
   });
-  assert.ok(['deep', 'max'].includes(routed.result.structuredContent.tier));
-  assert.equal(routed.result.structuredContent.modelResolution.status, 'recommended');
-  assert.equal(routed.result.structuredContent.modelResolution.recommended.id, 'deep-code');
+  const decision = routed.result.structuredContent;
+  assert.equal(decision.apiVersion, '2026-07-24');
+  assert.ok(['deep', 'max'].includes(decision.tier));
+  assert.equal(decision.modelResolution.recommended.id, 'deep-code');
+  assert.ok(decision.executionPlan.stages.length >= 2);
+  assert.ok(decision.confidenceEvidence);
+
+  const inventory = await send({
+    jsonrpc: '2.0', id: 4, method: 'tools/call',
+    params: { name: 'validate_model_inventory', arguments: { availableModels: [{ id: 'local', tier: 'balanced', capabilities: { code: true } }] } },
+  });
+  assert.equal(inventory.result.structuredContent.valid, true);
 
   const completion = await send({
-    jsonrpc: '2.0', id: 4, method: 'completion/complete',
-    params: { ref: { type: 'ref/prompt', name: 'route_before_answering' }, argument: { name: 'policy', value: 'b' } },
+    jsonrpc: '2.0', id: 5, method: 'completion/complete',
+    params: { ref: { type: 'ref/prompt', name: 'route_before_answering' }, argument: { name: 'profile', value: 'sec' } },
   });
-  assert.deepEqual(completion.result.completion.values, ['balanced', 'best']);
-  console.log('Switchboard MCP stdio smoke passed: lifecycle, discovery, model resolution, and completion.');
+  assert.deepEqual(completion.result.completion.values, ['security']);
+  console.log('Switchboard MCP 0.5 stdio smoke passed: lifecycle, discovery, planning, model resolution, diagnostics, and completion.');
 } finally {
   child.stdin.end();
   child.kill('SIGTERM');
