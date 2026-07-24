@@ -218,7 +218,7 @@ export function createSwitchboardMcpSession(options = {}) {
           if (lifecycle === 'stateful') phase = 'initializing';
           return success(id, {
             protocolVersion,
-            capabilities: { tools: { listChanged: false }, resources: { listChanged: false }, prompts: { listChanged: false }, completions: {} },
+            capabilities: { tools: {}, resources: {}, prompts: {}, completions: {} },
             serverInfo: SERVER_INFO,
             instructions: 'Call route_request before a task when model or reasoning selection is available. Switchboard recommendations are advisory; the MCP host remains responsible for choosing and invoking a model.',
           });
