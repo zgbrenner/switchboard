@@ -33,6 +33,7 @@ test('initializes with current MCP capabilities and negotiates compatible versio
   assert.equal(response.result.protocolVersion, '2025-11-25');
   assert.deepEqual(response.result.capabilities, { tools: {}, resources: {}, prompts: {}, completions: {} });
   assert.equal(response.result.serverInfo.name, 'switchboard');
+  assert.equal(response.result.serverInfo.version, '0.5.0');
   assert.match(response.result.instructions, /route_request/);
 
   const older = createSwitchboardMcpSession();
@@ -45,8 +46,8 @@ test('initializes with current MCP capabilities and negotiates compatible versio
 test('lists and calls the route_request tool with structured and text content', async () => {
   const session = await readySession();
   const listed = await call(session, 1, 'tools/list', {});
-  assert.deepEqual(listed.result.tools.map((tool) => tool.name), ['route_request']);
-  assert.equal(listed.result.tools[0].annotations.readOnlyHint, true);
+  assert.equal(listed.result.tools.some((tool) => tool.name === 'route_request'), true);
+  assert.equal(listed.result.tools.every((tool) => tool.annotations.readOnlyHint), true);
 
   const response = await call(session, 2, 'tools/call', {
     name: 'route_request', arguments: { prompt: 'Fix the grammar in this sentence: She go to work.' },
@@ -55,6 +56,7 @@ test('lists and calls the route_request tool with structured and text content', 
   assert.equal(response.result.structuredContent.tier, 'fast');
   assert.equal(response.result.structuredContent.effort, 'low');
   assert.equal(response.result.structuredContent.modelResolution.status, 'not-provided');
+  assert.equal(response.result.structuredContent.apiVersion, '2026-07-24');
   assert.deepEqual(JSON.parse(response.result.content[0].text), response.result.structuredContent);
 });
 
@@ -91,16 +93,19 @@ test('returns tool errors for invalid arguments without crashing the MCP session
 test('exposes routing resources and one reusable routing prompt', async () => {
   const session = await readySession();
   const resources = await call(session, 1, 'resources/list', {});
-  assert.deepEqual(resources.result.resources.map((resource) => resource.uri), ['switchboard://policies', 'switchboard://capabilities', 'switchboard://server']);
+  assert.deepEqual(resources.result.resources.map((resource) => resource.uri), [
+    'switchboard://policies', 'switchboard://profiles', 'switchboard://capabilities', 'switchboard://api', 'switchboard://server',
+  ]);
   const read = await call(session, 2, 'resources/read', { uri: 'switchboard://policies' });
   assert.equal(read.result.contents[0].mimeType, 'application/json');
   assert.deepEqual(Object.keys(JSON.parse(read.result.contents[0].text)), ['best', 'balanced', 'fast', 'conserve']);
 
   const prompts = await call(session, 3, 'prompts/list', {});
   assert.deepEqual(prompts.result.prompts.map((prompt) => prompt.name), ['route_before_answering']);
-  const prompt = await call(session, 4, 'prompts/get', { name: 'route_before_answering', arguments: { request: 'Audit this code.', policy: 'best' } });
+  const prompt = await call(session, 4, 'prompts/get', { name: 'route_before_answering', arguments: { request: 'Audit this code.', policy: 'best', profile: 'security' } });
   assert.match(prompt.result.messages[0].content.text, /route_request/);
   assert.match(prompt.result.messages[0].content.text, /Audit this code/);
+  assert.match(prompt.result.messages[0].content.text, /security/);
 });
 
 test('uses standard JSON-RPC errors for unknown methods and missing resources', async () => {
