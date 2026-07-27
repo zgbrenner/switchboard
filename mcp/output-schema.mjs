@@ -71,8 +71,10 @@ export const ROUTE_OUTPUT_SCHEMA_V05 = {
     learningAdjustment: learningSchema,
     confidenceEvidence: { type: 'object', additionalProperties: false, required: ['overall', 'scoreMargin', 'deterministicEvidence', 'capabilityCertainty', 'agreement'], properties: Object.fromEntries(['overall', 'scoreMargin', 'deterministicEvidence', 'capabilityCertainty', 'agreement'].map((key) => [key, { type: 'number', minimum: 0, maximum: 1 }])) },
     executionPlan: { type: 'object', additionalProperties: false, required: ['mode', 'stages'], properties: { mode: { type: 'string', enum: ['single', 'multi'] }, stages: { type: 'array', minItems: 1, maxItems: 4, items: stageSchema } } },
-    budgetAssessment: { type: 'object', additionalProperties: false, required: ['fits', 'violations', 'estimatedRelativeCost', 'estimatedRelativeLatency', 'estimatedQuality', 'constraints'], properties: {
-      fits: { type: 'boolean' }, violations: { type: 'array', uniqueItems: true, items: { type: 'string', enum: ['cost', 'latency', 'quality'] } },
+    budgetAssessment: { type: 'object', additionalProperties: false, required: ['fits', 'violations', 'modelCompatibility', 'estimatedRelativeCost', 'estimatedRelativeLatency', 'estimatedQuality', 'constraints'], properties: {
+      fits: { type: 'boolean' },
+      violations: { type: 'array', uniqueItems: true, items: { type: 'string', enum: ['cost', 'latency', 'quality', 'modelRequirements'] } },
+      modelCompatibility: { type: 'string', enum: ['not-evaluated', 'compatible', 'incompatible'] },
       estimatedRelativeCost: { type: 'number', minimum: 0, maximum: 1 }, estimatedRelativeLatency: { type: 'number', minimum: 0, maximum: 1 }, estimatedQuality: { type: 'number', minimum: 0, maximum: 1 },
       constraints: { type: 'object', additionalProperties: false, required: ['maxRelativeCost', 'maxRelativeLatency', 'minQuality', 'maxStages'], properties: {
         maxRelativeCost: { type: 'number', minimum: 0, maximum: 1 }, maxRelativeLatency: { type: 'number', minimum: 0, maximum: 1 }, minQuality: { type: 'number', minimum: 0, maximum: 1 }, maxStages: { type: 'integer', minimum: 1, maximum: 4 },
