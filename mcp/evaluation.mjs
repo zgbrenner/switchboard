@@ -1,13 +1,28 @@
+import { getProfile } from './profiles.mjs';
+
 const TIERS = ['fast', 'balanced', 'deep', 'max'];
-const CAPABILITIES = ['web', 'files', 'vision', 'longContext', 'code'];
 
 function index(value) {
   const found = TIERS.indexOf(value);
   return found < 0 ? 0 : found;
 }
 
+function tierAtLeast(left, right) {
+  return index(left) >= index(right);
+}
+
+function maxTier(left, right) {
+  return tierAtLeast(left, right) ? left : right;
+}
+
 function round(value) {
   return Math.round(value * 1000) / 1000;
+}
+
+function baselineTier(decision, testCase) {
+  const learnedFrom = decision.learningAdjustment?.applied ? decision.learningAdjustment.fromTier : decision.tier;
+  const minimumTier = getProfile(testCase.profile ?? 'general').minimumTier;
+  return maxTier(learnedFrom, minimumTier);
 }
 
 export async function evaluateRouter(cases, routeCase) {
@@ -18,12 +33,17 @@ export async function evaluateRouter(cases, routeCase) {
   let overRouting = 0;
   let requiredCapabilities = 0;
   let matchedCapabilities = 0;
+  let preferenceAdjustedCases = 0;
 
   for (let position = 0; position < cases.length; position += 1) {
     const testCase = cases[position];
     const decision = await routeCase(testCase);
     const expectedTier = testCase.expectedTier;
-    const actualTier = decision.tier;
+    const observedTier = decision.tier;
+    const actualTier = baselineTier(decision, testCase);
+    const learningApplied = decision.learningAdjustment?.applied === true;
+    if (learningApplied) preferenceAdjustedCases += 1;
+
     confusionMatrix[expectedTier][actualTier] += 1;
     if (expectedTier === actualTier) exact += 1;
     if (index(actualTier) < index(expectedTier)) harmfulUnderRouting += 1;
@@ -40,6 +60,8 @@ export async function evaluateRouter(cases, routeCase) {
       id: testCase.id ?? String(position + 1),
       expectedTier,
       actualTier,
+      observedTier,
+      learningApplied,
       tierDelta: index(actualTier) - index(expectedTier),
       missingCapabilities,
       passed: index(actualTier) >= index(expectedTier) && missingCapabilities.length === 0,
@@ -49,6 +71,8 @@ export async function evaluateRouter(cases, routeCase) {
   const count = cases.length;
   return {
     caseCount: count,
+    evaluationMode: 'baseline-with-preference-observation',
+    preferenceAdjustedCases,
     exactTierAccuracy: count ? round(exact / count) : 0,
     harmfulUnderRouting: { count: harmfulUnderRouting, rate: count ? round(harmfulUnderRouting / count) : 0 },
     overRouting: { count: overRouting, rate: count ? round(overRouting / count) : 0 },
