@@ -3,7 +3,8 @@ import { dirname, resolve } from 'node:path';
 
 const TIERS = ['fast', 'balanced', 'deep', 'max'];
 const HIGH_STAKES = new Set(['high-stakes', 'legal', 'security', 'medical', 'finance']);
-const stores = new Map();
+const MAX_STATE_BYTES = 1_048_576;
+const persistentStores = new Map();
 
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -29,12 +30,12 @@ function publicState(state, persistent) {
 }
 
 function validateState(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1 || !value.categories || typeof value.categories !== 'object') return emptyState();
+  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1 || !value.categories || typeof value.categories !== 'object' || Array.isArray(value.categories)) return emptyState();
   const state = emptyState();
   state.updatedAt = typeof value.updatedAt === 'string' ? value.updatedAt : null;
   state.totalOverrides = Number.isInteger(value.totalOverrides) && value.totalOverrides >= 0 ? value.totalOverrides : 0;
   for (const [category, raw] of Object.entries(value.categories)) {
-    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/u.test(category) || !raw || typeof raw !== 'object') continue;
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/u.test(category) || !raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
     state.categories[category] = {
       bias: Number.isFinite(raw.bias) ? clamp(raw.bias, -0.35, 0.35) : 0,
       overrides: Number.isInteger(raw.overrides) && raw.overrides >= 0 ? raw.overrides : 0,
@@ -50,24 +51,40 @@ export class AggregatePreferenceStore {
     this.path = path ? resolve(path) : null;
     this.state = emptyState();
     this.loaded = false;
+    this.loadPromise = null;
     this.queue = Promise.resolve();
   }
 
   async load() {
     if (this.loaded) return;
-    this.loaded = true;
-    if (!this.path) return;
-    try {
-      this.state = validateState(JSON.parse(await readFile(this.path, 'utf8')));
-    } catch (error) {
-      if (error?.code !== 'ENOENT') throw error;
-    }
+    if (this.loadPromise) return await this.loadPromise;
+    this.loadPromise = (async () => {
+      if (!this.path) {
+        this.loaded = true;
+        return;
+      }
+      try {
+        const text = await readFile(this.path, 'utf8');
+        if (Buffer.byteLength(text, 'utf8') > MAX_STATE_BYTES) throw new Error('Preference state exceeds the 1 MiB limit.');
+        this.state = validateState(JSON.parse(text));
+        this.loaded = true;
+      } catch (error) {
+        if (error?.code === 'ENOENT') {
+          this.loaded = true;
+          return;
+        }
+        throw error;
+      } finally {
+        this.loadPromise = null;
+      }
+    })();
+    await this.loadPromise;
   }
 
   async persist() {
     if (!this.path) return;
     await mkdir(dirname(this.path), { recursive: true });
-    const temporary = `${this.path}.${process.pid}.tmp`;
+    const temporary = `${this.path}.${process.pid}.${Date.now()}.tmp`;
     await writeFile(temporary, `${JSON.stringify(this.state, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
     await rename(temporary, this.path);
   }
@@ -75,7 +92,10 @@ export class AggregatePreferenceStore {
   async record({ categories, recommendedTier, selectedTier }) {
     await this.load();
     const delta = tierIndex(selectedTier) - tierIndex(recommendedTier);
-    if (delta === 0) return publicState(this.state, Boolean(this.path));
+    if (delta === 0) {
+      await this.queue;
+      return publicState(this.state, Boolean(this.path));
+    }
     this.queue = this.queue.then(async () => {
       const direction = Math.sign(delta);
       for (const category of categories) {
@@ -96,6 +116,7 @@ export class AggregatePreferenceStore {
 
   async snapshot() {
     await this.load();
+    await this.queue;
     return publicState(this.state, Boolean(this.path));
   }
 
@@ -111,6 +132,7 @@ export class AggregatePreferenceStore {
 
   async apply(decision) {
     await this.load();
+    await this.queue;
     const categories = decision.taskCategories ?? [];
     const values = categories.map((category) => this.state.categories[category]?.bias).filter(Number.isFinite);
     if (!values.length) return { decision, learning: { applied: false, bias: 0, reason: 'no-category-history' } };
@@ -130,9 +152,10 @@ export class AggregatePreferenceStore {
 }
 
 export function getPreferenceStore(path = process.env.SWITCHBOARD_MCP_STATE_PATH) {
-  const key = path ? resolve(path) : ':memory:';
-  if (!stores.has(key)) stores.set(key, new AggregatePreferenceStore({ path }));
-  return stores.get(key);
+  if (!path) return new AggregatePreferenceStore();
+  const key = resolve(path);
+  if (!persistentStores.has(key)) persistentStores.set(key, new AggregatePreferenceStore({ path: key }));
+  return persistentStores.get(key);
 }
 
 function object(value, label) {
