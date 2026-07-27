@@ -1,6 +1,6 @@
 # Switchboard MCP 0.5 implementation plan
 
-**Status:** Fully implemented and locally verified. Fast-forward merge to `main` is the only remaining publication step.
+**Status:** Fully implemented, locally verified, and fast-forward merged to `main` on July 27, 2026.
 
 **Goal:** Add planning, profiles, budgets, diagnostics, reproducible evaluation, model capability negotiation, privacy-preserving aggregate preference learning, and an additive versioned response contract to the local Switchboard MCP server.
 
@@ -35,4 +35,4 @@
 - [x] MCP-only production build
 - [x] Real stdio smoke covering lifecycle, discovery, planning, model resolution, learning, evaluation, and completion
 - [x] No GitHub Actions added or used
-- [ ] Fast-forward the exact verified branch to `main`
+- [x] Fast-forward the exact verified branch to `main`
