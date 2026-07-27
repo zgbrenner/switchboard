@@ -94,18 +94,27 @@ export function buildExecutionPlan(decision, { mode = 'auto', maxStages = 3 } = 
   return { mode: stages.length > 1 ? 'multi' : 'single', stages };
 }
 
+function modelCompatibility(modelResolution) {
+  if (!modelResolution || modelResolution.status === 'not-provided') return 'not-evaluated';
+  if (modelResolution.status === 'no-compatible-model' || !modelResolution.recommended) return 'incompatible';
+  return modelResolution.recommended.meetsRequirements ? 'compatible' : 'incompatible';
+}
+
 export function assessBudget(decision, modelResolution, budget) {
   const recommendation = modelResolution?.recommended;
   const estimatedCost = recommendation?.relativeCost ?? ({ fast: 0.1, balanced: 0.35, deep: 0.65, max: 1 })[decision.tier];
   const estimatedLatency = recommendation?.relativeLatency ?? ({ fast: 0.1, balanced: 0.35, deep: 0.65, max: 1 })[decision.tier];
   const quality = ({ fast: 0.35, balanced: 0.6, deep: 0.82, max: 1 })[decision.tier];
+  const compatibility = modelCompatibility(modelResolution);
   const violations = [];
   if (estimatedCost > budget.maxRelativeCost) violations.push('cost');
   if (estimatedLatency > budget.maxRelativeLatency) violations.push('latency');
   if (quality < budget.minQuality) violations.push('quality');
+  if (compatibility === 'incompatible') violations.push('modelRequirements');
   return {
     fits: violations.length === 0,
     violations,
+    modelCompatibility: compatibility,
     estimatedRelativeCost: round(estimatedCost),
     estimatedRelativeLatency: round(estimatedLatency),
     estimatedQuality: round(quality),
