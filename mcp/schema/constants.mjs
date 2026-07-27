@@ -1,0 +1,9 @@
+export const JSON_SCHEMA = 'https://json-schema.org/draft/2020-12/schema';
+export const POLICIES = ['best', 'balanced', 'fast', 'conserve'];
+export const TIERS = ['fast', 'balanced', 'deep', 'max'];
+export const EFFORTS = ['low', 'medium', 'high', 'max'];
+export const CAPABILITIES = ['web', 'files', 'vision', 'longContext', 'code'];
+export const FILE_TYPES = ['text', 'markdown', 'html', 'json', 'csv', 'pdf', 'docx', 'pptx', 'xlsx', 'zip', 'image', 'unknown'];
+export const ROLES = ['user', 'assistant'];
+export const PLAN_MODES = ['single', 'auto', 'multi'];
+export const API_VERSIONS = ['2026-07-24'];
