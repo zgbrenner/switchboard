@@ -12,12 +12,23 @@ The authoritative reference for:
 - MCP lifecycle and supported protocol revisions
 - Switchboard API contract `2026-07-24`
 - `route_request`, profiles, budgets, confidence evidence, and execution plans
-- Concrete host-model ranking
+- Concrete host-model ranking and explicit capability negotiation
 - `explain_route`, `compare_routes`, and `simulate_policy`
 - `validate_model_inventory`
 - `evaluate_router`
-- Resources, prompts, completion, authentication, Host/Origin controls, and limits
-- Privacy guarantees and host-enforcement limitations
+- Aggregate preference tools and resources
+- Authentication, Host/Origin controls, input limits, and privacy guarantees
+
+### [Aggregate preference learning](mcp-learning.md)
+
+The privacy-preserving learning contract, including:
+
+- `record_override`, `get_preference_state`, and `reset_preference_state`
+- Per-session in-memory isolation by default
+- Explicit local persistence with `SWITCHBOARD_MCP_STATE_PATH`
+- Category-only state, atomic writes, and the 1 MiB file limit
+- Concurrency behavior and learning safety floors
+- Guidance for separating users and trust boundaries
 
 ### [Architecture](architecture/overview.md)
 
@@ -25,11 +36,11 @@ The shared local router, MCP request flow, model-inventory resolution, transport
 
 ### [Privacy and threat model](privacy.md)
 
-Data processed in memory, non-persistence guarantees, evaluation-data handling, stdio and HTTP security controls, extension permissions, and trust boundaries.
+Data processed in memory, non-persistence guarantees, evaluation-data handling, aggregate preference boundaries, stdio and HTTP security controls, extension permissions, and trust boundaries.
 
 ### [Contributing](../CONTRIBUTING.md)
 
-Verification requirements and rules for changing lifecycle behavior, schemas, profiles, budgets, execution plans, diagnostics, evaluation, model resolution, transports, routing, or documentation.
+Verification requirements and rules for changing lifecycle behavior, schemas, profiles, budgets, execution plans, diagnostics, evaluation, learning, model resolution, transports, routing, or documentation.
 
 ## Shared router and evaluation
 
@@ -61,17 +72,19 @@ Research tooling for task-specific routing models. It is not part of MCP setup a
 
 ## Historical implementation records
 
-Files under `docs/superpowers/specs/` and `docs/superpowers/plans/` record designs and implementation plans from specific development stages. They are useful for provenance but are not authoritative product documentation. Current README, MCP, architecture, and privacy documentation controls when historical records conflict.
+Files under `docs/superpowers/specs/` and `docs/superpowers/plans/` record designs and implementation plans from specific development stages. They are useful for provenance but are not authoritative product documentation. Current README, MCP, architecture, privacy, and learning documentation controls when historical records conflict.
 
 ## Current release facts
 
 - Package and MCP server version: **0.5.0**
 - Switchboard API contract: `2026-07-24`
 - Primary interface: local MCP server
-- Tools: `route_request`, `explain_route`, `compare_routes`, `simulate_policy`, `validate_model_inventory`, `evaluate_router`
+- Read-only tools: `route_request`, `explain_route`, `compare_routes`, `simulate_policy`, `validate_model_inventory`, `evaluate_router`, `get_preference_state`
+- State-changing tools: `record_override`, `reset_preference_state`
 - Transports: stdio and stateful Streamable HTTP
 - MCP revision: `2025-11-25`
 - Compatible revisions: `2025-06-18`, `2025-03-26`
 - Remote routing service: none
-- Persisted routing or evaluation content: none
+- Prompt, context, file, model-inventory, response, and evaluation persistence: none
+- Aggregate preference persistence: opt-in local file only
 - GitHub Actions required: no
