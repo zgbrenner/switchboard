@@ -1,6 +1,6 @@
 # Switchboard MCP 0.5 Implementation Plan
 
-**Status:** Implementation substantially complete on `agent/mcp-0.5`; full repository verification and evaluation-isolation work remain before merge.
+**Status:** Implementation substantially complete on `agent/mcp-0.5`; full repository verification and secondary-tool output schemas remain before merge.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for status tracking.
 
@@ -43,13 +43,14 @@
 
 ### Task 3: Router evaluation tool
 
-**Files:** `mcp/evaluation.mjs`, `mcp/schema.mjs`, `mcp/server.mjs`, `test/mcp-0.5.test.mjs`
+**Files:** `mcp/evaluation.mjs`, `mcp/schema.mjs`, `mcp/server.mjs`, `test/mcp-0.5.test.mjs`, `test/mcp-evaluation-reproducibility.test.mjs`
 
 - [x] Add bounded evaluation-case validation.
 - [x] Calculate harmful under-routing, over-routing, exact-tier accuracy, capability recall, and a confusion matrix.
 - [x] Expose `evaluate_router` as a read-only MCP tool.
 - [x] Add tests for under-routed, over-routed, exact, and capability-recall batches.
-- [ ] Make evaluation independent of learned preference state by default, with an explicit opt-in when preference-adjusted evaluation is desired.
+- [x] Keep baseline metrics independent of learned preference adjustments while reporting the observed preference-adjusted tier.
+- [x] Preserve profile minimum tiers in baseline evaluation.
 
 ### Task 4: Aggregate preference learning
 
@@ -73,12 +74,13 @@
 - [x] Bump the package and server to 0.5.0.
 - [x] Expand the stdio smoke flow to discover the enhanced tool surface and route response.
 - [x] Document profiles, budgets, execution plans, diagnostics, evaluation, capability negotiation, aggregate learning, and limitations.
-- [ ] Update the main MCP reference with `modelRequirements` budget violations and the final evaluation-preference contract.
+- [ ] Update the main MCP reference with `modelRequirements` budget violations and baseline-with-preference-observation evaluation semantics.
 
 ### Task 6: Final verification and publication
 
 - [x] Run focused isolated learning tests: 5 passed, 0 failed.
 - [x] Run focused isolated model-compatibility budget tests: 4 passed, 0 failed.
+- [x] Run focused isolated evaluation reproducibility tests: 3 passed, 0 failed.
 - [ ] Materialize the complete branch in a repository-aware runtime.
 - [ ] Run `npm test`.
 - [ ] Run `npm run build`.
