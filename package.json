@@ -1,9 +1,9 @@
 {
-  "name": "switchboard-extension",
+  "name": "switchboard-mcp",
   "version": "0.5.0",
   "private": true,
   "type": "module",
-  "description": "Privacy-first local AI request planning, model routing, diagnostics, and evaluation with MCP and browser extension interfaces.",
+  "description": "Privacy-first local MCP server for AI request planning, model routing, diagnostics, evaluation, and aggregate preference learning.",
   "bin": {
     "switchboard-mcp": "mcp/index.mjs"
   },
@@ -16,7 +16,8 @@
     "models:fetch:judge": "node scripts/fetch-models.mjs judge",
     "models:verify": "node scripts/verify-models.mjs",
     "build": "node scripts/build.mjs",
-    "verify": "npm run typecheck && npm test && npm run benchmark -- --strict && npm run verify:python && npm run models:verify && npm run build && npm run verify:extension && npm run mcp:smoke",
+    "build:extension": "node scripts/build-extension.mjs",
+    "verify": "npm run typecheck && npm test && npm run build && npm run mcp:smoke",
     "verify:extension": "node scripts/verify-extension.mjs",
     "benchmark": "node scripts/benchmark.mjs",
     "verify:python": "python -m unittest discover -s training/tests -v && python -m compileall -q training",

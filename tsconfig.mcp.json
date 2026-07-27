@@ -1,0 +1,11 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "outDir": "dist/js"
+  },
+  "include": [
+    "src/shared/types.ts",
+    "src/router/**/*.ts"
+  ],
+  "exclude": ["dist", ".test-dist"]
+}

@@ -47,7 +47,10 @@ test('lists and calls the route_request tool with structured and text content', 
   const session = await readySession();
   const listed = await call(session, 1, 'tools/list', {});
   assert.equal(listed.result.tools.some((tool) => tool.name === 'route_request'), true);
-  assert.equal(listed.result.tools.every((tool) => tool.annotations.readOnlyHint), true);
+  assert.equal(listed.result.tools.find((tool) => tool.name === 'route_request').annotations.readOnlyHint, true);
+  assert.equal(listed.result.tools.find((tool) => tool.name === 'record_override').annotations.readOnlyHint, false);
+  assert.equal(listed.result.tools.find((tool) => tool.name === 'reset_preference_state').annotations.destructiveHint, true);
+  assert.equal(listed.result.tools.every((tool) => tool.outputSchema?.$schema === 'https://json-schema.org/draft/2020-12/schema'), true);
 
   const response = await call(session, 2, 'tools/call', {
     name: 'route_request', arguments: { prompt: 'Fix the grammar in this sentence: She go to work.' },
@@ -94,7 +97,8 @@ test('exposes routing resources and one reusable routing prompt', async () => {
   const session = await readySession();
   const resources = await call(session, 1, 'resources/list', {});
   assert.deepEqual(resources.result.resources.map((resource) => resource.uri), [
-    'switchboard://policies', 'switchboard://profiles', 'switchboard://capabilities', 'switchboard://api', 'switchboard://server',
+    'switchboard://policies', 'switchboard://profiles', 'switchboard://capabilities', 'switchboard://api',
+    'switchboard://adapter-contract', 'switchboard://preferences', 'switchboard://server',
   ]);
   const read = await call(session, 2, 'resources/read', { uri: 'switchboard://policies' });
   assert.equal(read.result.contents[0].mimeType, 'application/json');

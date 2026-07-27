@@ -1,6 +1,7 @@
 import { getProfile } from './profiles.mjs';
 
 const TIERS = ['fast', 'balanced', 'deep', 'max'];
+const CAPABILITIES = ['web', 'files', 'vision', 'longContext', 'code'];
 
 function index(value) {
   const found = TIERS.indexOf(value);
@@ -19,10 +20,28 @@ function round(value) {
   return Math.round(value * 1000) / 1000;
 }
 
-function baselineTier(decision, testCase) {
+function normalizeRouted(value, testCase) {
+  if (value && typeof value === 'object' && value.decision) {
+    const baseline = value.decision;
+    const observedTier = value.observedTier ?? baseline.tier;
+    return {
+      decision: baseline,
+      actualTier: baseline.tier,
+      observedTier,
+      preferenceAdjusted: observedTier !== baseline.tier,
+    };
+  }
+
+  const decision = value;
   const learnedFrom = decision.learningAdjustment?.applied ? decision.learningAdjustment.fromTier : decision.tier;
   const minimumTier = getProfile(testCase.profile ?? 'general').minimumTier;
-  return maxTier(learnedFrom, minimumTier);
+  const actualTier = maxTier(learnedFrom, minimumTier);
+  return {
+    decision,
+    actualTier,
+    observedTier: decision.tier,
+    preferenceAdjusted: decision.learningAdjustment?.applied === true,
+  };
 }
 
 export async function evaluateRouter(cases, routeCase) {
@@ -37,12 +56,12 @@ export async function evaluateRouter(cases, routeCase) {
 
   for (let position = 0; position < cases.length; position += 1) {
     const testCase = cases[position];
-    const decision = await routeCase(testCase);
+    const routed = normalizeRouted(await routeCase(testCase), testCase);
+    const decision = routed.decision;
     const expectedTier = testCase.expectedTier;
-    const observedTier = decision.tier;
-    const actualTier = baselineTier(decision, testCase);
-    const learningApplied = decision.learningAdjustment?.applied === true;
-    if (learningApplied) preferenceAdjustedCases += 1;
+    const actualTier = routed.actualTier;
+    const observedTier = routed.observedTier;
+    if (routed.preferenceAdjusted) preferenceAdjustedCases += 1;
 
     confusionMatrix[expectedTier][actualTier] += 1;
     if (expectedTier === actualTier) exact += 1;
@@ -61,7 +80,8 @@ export async function evaluateRouter(cases, routeCase) {
       expectedTier,
       actualTier,
       observedTier,
-      learningApplied,
+      preferenceAdjusted: routed.preferenceAdjusted,
+      learningApplied: routed.preferenceAdjusted,
       tierDelta: index(actualTier) - index(expectedTier),
       missingCapabilities,
       passed: index(actualTier) >= index(expectedTier) && missingCapabilities.length === 0,
@@ -79,5 +99,6 @@ export async function evaluateRouter(cases, routeCase) {
     capabilityRecall: requiredCapabilities ? round(matchedCapabilities / requiredCapabilities) : 1,
     confusionMatrix,
     cases: rows,
+    capabilityKeys: CAPABILITIES,
   };
 }
