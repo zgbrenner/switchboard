@@ -203,7 +203,7 @@ export function startHttpServer(options = {}) {
       try {
         message = JSON.parse(body);
       } catch {
-        json(request, response, 400, { jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } });
+        json(request, response, 400, { jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } });
         return;
       }
       const isObject = message && typeof message === 'object' && !Array.isArray(message);
@@ -259,7 +259,7 @@ export function startHttpServer(options = {}) {
       json(request, response, 200, result, responseHeaders);
     } catch (exception) {
       const status = Number(exception?.statusCode) || 500;
-      if (status === 500) json(request, response, 500, { jsonrpc: '2.0', id: null, error: { code: -32603, message: 'Internal error' } });
+      if (status === 500) json(request, response, 500, { jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' } });
       else plain(request, response, status, exception instanceof Error ? exception.message : 'Request failed');
     }
   });

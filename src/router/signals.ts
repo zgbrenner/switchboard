@@ -88,18 +88,18 @@ export function extractSignals(text: string): SignalResult {
   const normalized = text.trim();
   const unreadableScript = isUnreadableScript(normalized);
   // Latin word counting is meaningless for scripts that do not delimit words with spaces.
-  const wordCount = unreadableScript
-    ? Math.ceil([...normalized].length / 2)
-    : normalized.split(/\s+/).filter(Boolean).length;
+  const wordCount = unreadableScript ? Math.ceil([...normalized].length / 2) : normalized.split(/\s+/).filter(Boolean).length;
 
   // Counted before the simple-transformation check, because "summarize X, list Y, turn them into Z,
   // and create W" is a multi-part task that merely opens with a transformation verb. Enumerated
   // clauses separated by commas count too -- only counting sentence breaks missed most real lists.
   const instructionMarkers =
     (normalized.match(/(?:^|[.;]\s+|\b(?:and then|also|finally|after that)\b)/gi) ?? []).length +
-    (normalized.match(
-      /[,;]\s+(?:and\s+)?(?:list|turn|create|make|write|explain|add|include|compare|summari[sz]e|draft|produce|generate|identify|extract|rank|score|translate)\b/gi,
-    ) ?? []).length;
+    (
+      normalized.match(
+        /[,;]\s+(?:and\s+)?(?:list|turn|create|make|write|explain|add|include|compare|summari[sz]e|draft|produce|generate|identify|extract|rank|score|translate)\b/gi,
+      ) ?? []
+    ).length;
   const multiStep = instructionMarkers >= 4;
 
   if (PATTERNS.fast.test(normalized)) {

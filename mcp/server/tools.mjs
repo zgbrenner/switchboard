@@ -28,6 +28,11 @@ const WRITE_AGGREGATE = { readOnlyHint: false, destructiveHint: false, idempoten
 const RESET_AGGREGATE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
 const EMPTY_INPUT_SCHEMA = { type: 'object', additionalProperties: false, properties: {} };
 
+/** Names the dispatcher accepts. Used to reject an unknown tool as a protocol error, per the spec. */
+export function isKnownTool(name) {
+  return toolDefinitions().some((definition) => definition.name === name);
+}
+
 export function toolDefinitions() {
   return [
     {

@@ -1,18 +1,33 @@
 import { CAPABILITIES, EFFORTS, FILE_TYPES, ROLES, TIERS } from './constants.mjs';
 
+/**
+ * Raised when caller-supplied arguments violate a published input contract.
+ *
+ * Distinguishing this from an unexpected internal fault is what lets the server answer -32602
+ * (invalid params) for the caller's mistakes and -32603 (internal error) for its own, instead of
+ * blaming every escaped exception on the request.
+ */
+export class ValidationError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'ValidationError';
+  }
+}
+
 export function object(value, label) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`${label} must be an object.`);
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ValidationError(`${label} must be an object.`);
   return value;
 }
 
 export function exactKeys(value, allowed, label) {
   const accepted = new Set(allowed);
-  for (const key of Object.keys(value)) if (!accepted.has(key)) throw new Error(`${label} contains an unsupported property: ${key}.`);
+  for (const key of Object.keys(value))
+    if (!accepted.has(key)) throw new ValidationError(`${label} contains an unsupported property: ${key}.`);
 }
 
 export function stringValue(value, label, { min = 0, max = 64_000, nonWhitespace = false } = {}) {
   if (typeof value !== 'string' || value.length < min || value.length > max || (nonWhitespace && !value.trim())) {
-    throw new Error(
+    throw new ValidationError(
       `${label} must be a string between ${min} and ${max} characters${nonWhitespace ? ' and contain a non-whitespace character' : ''}.`,
     );
   }
@@ -20,30 +35,32 @@ export function stringValue(value, label, { min = 0, max = 64_000, nonWhitespace
 }
 
 export function integer(value, label, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
-  if (!Number.isInteger(value) || value < min || value > max) throw new Error(`${label} must be an integer between ${min} and ${max}.`);
+  if (!Number.isInteger(value) || value < min || value > max)
+    throw new ValidationError(`${label} must be an integer between ${min} and ${max}.`);
   return value;
 }
 
 export function numberValue(value, label, { min = 0, max = 1 } = {}) {
-  if (!Number.isFinite(value) || value < min || value > max) throw new Error(`${label} must be a number between ${min} and ${max}.`);
+  if (!Number.isFinite(value) || value < min || value > max)
+    throw new ValidationError(`${label} must be a number between ${min} and ${max}.`);
   return value;
 }
 
 export function optionalBoolean(value, label, fallback = false) {
   if (value === undefined) return fallback;
-  if (typeof value !== 'boolean') throw new Error(`${label} must be boolean.`);
+  if (typeof value !== 'boolean') throw new ValidationError(`${label} must be boolean.`);
   return value;
 }
 
 export function enumValue(value, values, label, fallback) {
   if (value === undefined) return fallback;
-  if (!values.includes(value)) throw new Error(`${label} must be one of ${values.join(', ')}.`);
+  if (!values.includes(value)) throw new ValidationError(`${label} must be one of ${values.join(', ')}.`);
   return value;
 }
 
 export function parseContext(value) {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 8) throw new Error('context must be an array with at most 8 turns.');
+  if (!Array.isArray(value) || value.length > 8) throw new ValidationError('context must be an array with at most 8 turns.');
   let total = 0;
   return value.map((raw, index) => {
     const turn = object(raw, `context[${index}]`);
@@ -51,7 +68,7 @@ export function parseContext(value) {
     const role = enumValue(turn.role, ROLES, `context[${index}].role`);
     const text = stringValue(turn.text, `context[${index}].text`, { min: 1, max: 12_000, nonWhitespace: true });
     total += text.length;
-    if (total > 32_000) throw new Error('context text exceeds the 32000-character limit.');
+    if (total > 32_000) throw new ValidationError('context text exceeds the 32000-character limit.');
     return { role, text };
   });
 }
@@ -75,7 +92,7 @@ function defaultMediaType(type) {
 
 export function parseFiles(value) {
   if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length > 20) throw new Error('files must be an array with at most 20 entries.');
+  if (!Array.isArray(value) || value.length > 20) throw new ValidationError('files must be an array with at most 20 entries.');
   return value.map((raw, index) => {
     const label = `files[${index}]`;
     const file = object(raw, label);
@@ -97,7 +114,7 @@ export function parseFiles(value) {
       warnings.length > 20 ||
       warnings.some((warning) => typeof warning !== 'string' || warning.length > 500)
     ) {
-      throw new Error(`${label}.warnings must contain at most 20 short strings.`);
+      throw new ValidationError(`${label}.warnings must contain at most 20 short strings.`);
     }
     return {
       name,
@@ -120,10 +137,10 @@ export function parseBoosts(value) {
   if (value === undefined) return undefined;
   const raw = object(value, 'categoryBoosts');
   const entries = Object.entries(raw);
-  if (entries.length > 64) throw new Error('categoryBoosts may contain at most 64 entries.');
+  if (entries.length > 64) throw new ValidationError('categoryBoosts may contain at most 64 entries.');
   const output = {};
   for (const [key, boost] of entries) {
-    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/u.test(key)) throw new Error(`categoryBoosts contains an invalid key: ${key}.`);
+    if (!/^[a-z0-9][a-z0-9_-]{0,39}$/u.test(key)) throw new ValidationError(`categoryBoosts contains an invalid key: ${key}.`);
     output[key] = numberValue(boost, `categoryBoosts.${key}`, { min: -0.35, max: 0.35 });
   }
   return output;
@@ -140,7 +157,7 @@ function parseCapabilityMap(value, label) {
 
 export function normalizeModelInventory(value, label = 'availableModels') {
   if (value === undefined) return undefined;
-  if (!Array.isArray(value) || value.length > 64) throw new Error(`${label} must be an array with at most 64 entries.`);
+  if (!Array.isArray(value) || value.length > 64) throw new ValidationError(`${label} must be an array with at most 64 entries.`);
   const identifiers = new Set();
   return value.map((raw, index) => {
     const prefix = `${label}[${index}]`;
@@ -151,7 +168,7 @@ export function normalizeModelInventory(value, label = 'availableModels') {
       prefix,
     );
     const id = stringValue(model.id, `${prefix}.id`, { min: 1, max: 200, nonWhitespace: true });
-    if (identifiers.has(id)) throw new Error(`${label} contains duplicate id: ${id}.`);
+    if (identifiers.has(id)) throw new ValidationError(`${label} contains duplicate id: ${id}.`);
     identifiers.add(id);
     const tier = enumValue(model.tier, TIERS, `${prefix}.tier`, 'balanced');
     const effortLevels = model.effortLevels === undefined ? [] : model.effortLevels;
@@ -161,7 +178,7 @@ export function normalizeModelInventory(value, label = 'availableModels') {
       effortLevels.some((effort) => !EFFORTS.includes(effort)) ||
       new Set(effortLevels).size !== effortLevels.length
     ) {
-      throw new Error(`${prefix}.effortLevels is invalid or contains duplicates.`);
+      throw new ValidationError(`${prefix}.effortLevels is invalid or contains duplicates.`);
     }
     return {
       id,

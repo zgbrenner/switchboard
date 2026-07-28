@@ -14,7 +14,7 @@ export async function serveStdio({
     if (!line.trim()) continue;
     if (Buffer.byteLength(line, 'utf8') > MAX_LINE_BYTES) {
       output.write(
-        `${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request', data: { message: 'Message exceeds 1 MiB.' } } })}\n`,
+        `${JSON.stringify({ jsonrpc: '2.0', error: { code: -32600, message: 'Invalid Request', data: { message: 'Message exceeds 1 MiB.' } } })}\n`,
       );
       continue;
     }
@@ -22,7 +22,7 @@ export async function serveStdio({
     try {
       message = JSON.parse(line);
     } catch {
-      output.write(`${JSON.stringify({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'Parse error' } })}\n`);
+      output.write(`${JSON.stringify({ jsonrpc: '2.0', error: { code: -32700, message: 'Parse error' } })}\n`);
       continue;
     }
     try {

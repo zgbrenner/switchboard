@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getPreferenceStore } from '../learning.mjs';
 import { listProfiles } from '../profiles.mjs';
-import { POLICIES } from '../schema.mjs';
+import { POLICIES, ValidationError } from '../schema.mjs';
 import {
   ADAPTER_CONTRACT,
   API_METADATA,
@@ -13,7 +13,7 @@ import {
   SERVER_METADATA,
   SUPPORTED_PROTOCOL_VERSIONS,
 } from './metadata.mjs';
-import { createToolDispatcher, toolDefinitions } from './tools.mjs';
+import { createToolDispatcher, isKnownTool, toolDefinitions } from './tools.mjs';
 
 const routerModuleUrl = process.env.SWITCHBOARD_ROUTER_MODULE
   ? pathToFileURL(resolve(process.cwd(), process.env.SWITCHBOARD_ROUTER_MODULE)).href
@@ -23,8 +23,20 @@ const { routeRequest } = await import(routerModuleUrl);
 function success(id, result) {
   return { jsonrpc: '2.0', id, result };
 }
+/**
+ * Build a JSON-RPC error response.
+ *
+ * The MCP schema types RequestId as `string | number` and makes the field optional, so `id: null` is
+ * not a legal value. The official SDK validates responses against that schema and routes a
+ * null-id message to its transport error handler instead of to the pending request, which leaves the
+ * caller hanging until its own timeout. When the id is unknown or unreadable, omit the field.
+ */
 function failure(id, code, message, data) {
-  return { jsonrpc: '2.0', id: id ?? null, error: { code, message, ...(data === undefined ? {} : { data }) } };
+  return {
+    jsonrpc: '2.0',
+    ...(validId(id) ? { id } : {}),
+    error: { code, message, ...(data === undefined ? {} : { data }) },
+  };
 }
 function paramsObject(value) {
   return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
@@ -40,30 +52,32 @@ function toolError(message) {
 }
 
 function initializationParams(params) {
-  if (!params) throw new Error('initialize params must be an object.');
-  if (typeof params.protocolVersion !== 'string' || !params.protocolVersion) throw new Error('initialize.protocolVersion is required.');
+  if (!params) throw new ValidationError('initialize params must be an object.');
+  if (typeof params.protocolVersion !== 'string' || !params.protocolVersion)
+    throw new ValidationError('initialize.protocolVersion is required.');
   if (!params.capabilities || typeof params.capabilities !== 'object' || Array.isArray(params.capabilities))
-    throw new Error('initialize.capabilities must be an object.');
+    throw new ValidationError('initialize.capabilities must be an object.');
   if (!params.clientInfo || typeof params.clientInfo !== 'object' || Array.isArray(params.clientInfo))
-    throw new Error('initialize.clientInfo must be an object.');
+    throw new ValidationError('initialize.clientInfo must be an object.');
   if (
     typeof params.clientInfo.name !== 'string' ||
     !params.clientInfo.name ||
     typeof params.clientInfo.version !== 'string' ||
     !params.clientInfo.version
   )
-    throw new Error('initialize.clientInfo requires name and version.');
+    throw new ValidationError('initialize.clientInfo requires name and version.');
   return params;
 }
 
 function completion(params) {
   const ref = params?.ref;
   const argument = params?.argument;
-  if (!ref || ref.type !== 'ref/prompt' || ref.name !== 'route_before_answering') throw new Error('Completion reference is unsupported.');
-  if (!argument || typeof argument.value !== 'string') throw new Error('Completion requires an argument value.');
+  if (!ref || ref.type !== 'ref/prompt' || ref.name !== 'route_before_answering')
+    throw new ValidationError('Completion reference is unsupported.');
+  if (!argument || typeof argument.value !== 'string') throw new ValidationError('Completion requires an argument value.');
   const prefix = argument.value.toLowerCase();
   const source = argument.name === 'policy' ? POLICIES : argument.name === 'profile' ? listProfiles().map((profile) => profile.name) : null;
-  if (!source) throw new Error('Completion supports policy and profile prompt arguments.');
+  if (!source) throw new ValidationError('Completion supports policy and profile prompt arguments.');
   const values = source.filter((value) => value.startsWith(prefix)).sort();
   return { completion: { values, total: values.length, hasMore: false } };
 }
@@ -130,6 +144,12 @@ export function createSwitchboardMcpSession(options = {}) {
           return isNotification ? null : success(id, { tools: toolDefinitions() });
         case 'tools/call': {
           if (isNotification) return null;
+          // The spec classifies an unknown tool as a protocol error, not a tool execution error:
+          // isError is for failures *inside* a handler, which the model can react to and retry.
+          // Reporting an unknown name as isError tells the model the call was dispatched.
+          if (typeof params.name !== 'string' || !isKnownTool(params.name)) {
+            return failure(id, -32602, 'Unknown tool', { name: params.name ?? null });
+          }
           try {
             return success(id, toolResult(await callTool(params.name, params.arguments ?? {})));
           } catch (error) {
@@ -176,7 +196,9 @@ export function createSwitchboardMcpSession(options = {}) {
             'switchboard://server': SERVER_METADATA,
           };
           if (params.uri === 'switchboard://preferences') resources[params.uri] = await preferenceStore.snapshot();
-          if (!Object.hasOwn(resources, params.uri)) return failure(id, -32002, 'Resource not found', { uri: params.uri });
+          // -32602 (invalid params), not -32002: this server already uses -32002 for
+          // "not initialized", and one code meaning two things is unreadable to a client.
+          if (!Object.hasOwn(resources, params.uri)) return failure(id, -32602, 'Resource not found', { uri: params.uri });
           return success(id, {
             contents: [{ uri: params.uri, mimeType: 'application/json', text: JSON.stringify(resources[params.uri], null, 2) }],
           });
@@ -225,9 +247,14 @@ export function createSwitchboardMcpSession(options = {}) {
           return isNotification ? null : failure(id, -32601, 'Method not found', { method: message.method });
       }
     } catch (error) {
-      return isNotification
-        ? null
-        : failure(id, -32602, 'Invalid params', { message: error instanceof Error ? error.message : 'Unknown error' });
+      if (isNotification) return null;
+      // Validation failures are the caller's fault (-32602); anything else that escaped a handler is
+      // ours (-32603). Reporting an internal fault as "Invalid params" sends the client debugging a
+      // request that was perfectly well formed.
+      const detail = error instanceof Error ? error.message : 'Unknown error';
+      return error instanceof ValidationError
+        ? failure(id, -32602, 'Invalid params', { message: detail })
+        : failure(id, -32603, 'Internal error', { message: detail });
     }
   }
 

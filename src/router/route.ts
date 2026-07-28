@@ -209,8 +209,7 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
   const margin = (ranked[0]?.score ?? 0) - (ranked[1]?.score ?? 0);
   const explicitMax = reasons.some((reason) => reason.code === 'explicit-research') && score >= 4.5;
   const finalTier = explicitMax ? tierAtLeast('max', floor) : deterministic;
-  const shouldUseJudge =
-    promptSignals.vagueFollowUp || promptSignals.conflictingSignals || promptSignals.unreadableScript || margin < 0.18;
+  const shouldUseJudge = promptSignals.vagueFollowUp || promptSignals.conflictingSignals || promptSignals.unreadableScript || margin < 0.18;
 
   // Confidence reflects how much evidence the decision actually rests on, measured as the total
   // absolute weight of the signals that fired -- not how many fired, since one unambiguous signal

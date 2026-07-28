@@ -152,8 +152,10 @@ test('uses standard JSON-RPC errors for unknown methods and missing resources', 
   const session = await readySession();
   const unknown = await call(session, 1, 'unknown/method', {});
   assert.equal(unknown.error.code, -32601);
+  // -32602, not -32002: this server uses -32002 for "not initialized", and one code cannot mean
+  // two different things to a client trying to react to the failure.
   const missing = await call(session, 2, 'resources/read', { uri: 'switchboard://missing' });
-  assert.equal(missing.error.code, -32002);
+  assert.equal(missing.error.code, -32602);
   assert.equal(await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
 });
 

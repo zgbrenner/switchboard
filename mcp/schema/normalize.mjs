@@ -11,6 +11,7 @@ import {
   parseContext,
   parseFiles,
   stringValue,
+  ValidationError,
 } from './validators.mjs';
 
 export function normalizeRouteArguments(value) {
@@ -42,7 +43,7 @@ export function normalizeRouteArguments(value) {
     args.currentModelId === undefined
       ? undefined
       : stringValue(args.currentModelId, 'currentModelId', { min: 1, max: 200, nonWhitespace: true });
-  if (currentModelId !== undefined && availableModels === undefined) throw new Error('currentModelId requires availableModels.');
+  if (currentModelId !== undefined && availableModels === undefined) throw new ValidationError('currentModelId requires availableModels.');
   const categoryBoosts = parseBoosts(args.categoryBoosts);
   return {
     request: {
@@ -74,7 +75,7 @@ export function normalizeComparisonArguments(value) {
     'comparison arguments',
   );
   if (!Array.isArray(args.variants) || args.variants.length < 2 || args.variants.length > 8)
-    throw new Error('variants must contain between 2 and 8 entries.');
+    throw new ValidationError('variants must contain between 2 and 8 entries.');
   const base = {
     prompt: args.prompt,
     context: args.context,
@@ -89,7 +90,7 @@ export function normalizeComparisonArguments(value) {
     const variant = object(raw, `variants[${index}]`);
     exactKeys(variant, ['label', 'policy', 'profile'], `variants[${index}]`);
     const label = stringValue(variant.label, `variants[${index}].label`, { min: 1, max: 80, nonWhitespace: true });
-    if (labels.has(label)) throw new Error(`variants contains duplicate label: ${label}.`);
+    if (labels.has(label)) throw new ValidationError(`variants contains duplicate label: ${label}.`);
     labels.add(label);
     return { label, arguments: { ...base, policy: variant.policy, profile: variant.profile } };
   });
@@ -99,7 +100,7 @@ export function normalizeEvaluationArguments(value) {
   const args = object(value ?? {}, 'evaluate_router arguments');
   exactKeys(args, ['cases', 'includePreferences'], 'evaluate_router arguments');
   if (!Array.isArray(args.cases) || args.cases.length < 1 || args.cases.length > 100)
-    throw new Error('cases must contain between 1 and 100 entries.');
+    throw new ValidationError('cases must contain between 1 and 100 entries.');
   const cases = args.cases.map((raw, index) => {
     const item = object(raw, `cases[${index}]`);
     exactKeys(item, ['id', 'prompt', 'context', 'files', 'policy', 'profile', 'expectedTier', 'requiredCapabilities'], `cases[${index}]`);
@@ -110,7 +111,7 @@ export function normalizeEvaluationArguments(value) {
       requiredCapabilities.some((capability) => !CAPABILITIES.includes(capability)) ||
       new Set(requiredCapabilities).size !== requiredCapabilities.length
     ) {
-      throw new Error(`cases[${index}].requiredCapabilities is invalid.`);
+      throw new ValidationError(`cases[${index}].requiredCapabilities is invalid.`);
     }
     const normalized = normalizeRouteArguments({
       prompt: item.prompt,
