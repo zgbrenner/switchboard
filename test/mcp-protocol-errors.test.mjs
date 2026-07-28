@@ -6,10 +6,10 @@
  * protocol error laundered into a tool result.
  */
 import assert from 'node:assert/strict';
+import { Readable, Writable } from 'node:stream';
 import test from 'node:test';
 import { createSwitchboardMcpSession } from '../mcp/server.mjs';
 import { serveStdio } from '../mcp/stdio.mjs';
-import { Readable, Writable } from 'node:stream';
 
 const session = () => createSwitchboardMcpSession({ lifecycle: 'stateless' });
 

@@ -1,101 +1,166 @@
+[![CI](https://github.com/zgbrenner/switchboard/actions/workflows/ci.yml/badge.svg)](https://github.com/zgbrenner/switchboard/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/switchboard-mcp.svg)](https://www.npmjs.com/package/switchboard-mcp)
+[![Node](https://img.shields.io/node/v/switchboard-mcp.svg)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 # Switchboard
 
-**Switchboard 0.5.0** is a privacy-first local MCP server that analyzes an AI request before execution and returns a provider-independent routing decision.
+**Switchboard tells your AI agent how hard to think before it starts.** It reads a request and
+answers with a quality tier, a reasoning-effort level, the capabilities the task needs, a
+single- or multi-stage execution plan, and — if you hand it your model list — which model to call.
+It runs entirely on your machine, needs no API key, and never sees your prompt leave the process.
 
-It can recommend:
+> Switchboard is **advisory**. Your host decides whether to call it, whether to follow it, and which
+> model to actually invoke.
 
-- A quality tier: `fast`, `balanced`, `deep`, or `max`
-- A reasoning-effort level: `low`, `medium`, `high`, or `max`
-- Required capabilities such as web access, files, vision, long context, and code
-- A single-stage or multi-stage execution plan
-- A normalized cost, latency, quality, and stage-count budget assessment
-- A concrete model from an inventory supplied by the MCP host
-- Concise confidence evidence and routing reasons
+## Use cases
 
-Switchboard can also compare routes, simulate policies, validate model inventories, evaluate routing quality, and learn bounded category preferences without accepting or storing prompt text.
+Things a user says, and what Switchboard answers underneath:
 
-> Switchboard is advisory. The MCP host decides whether to call it, whether to follow its recommendation, and which model to invoke.
+- `"Audit this auth flow for race conditions"` → `deep` / `high` effort, needs `code`, 3-stage plan
+- `"Make this email friendlier"` → `fast` / `low` effort, no special capabilities, single stage
+- `"What changed in the EU AI Act this month?"` → needs `web`, recency signal, `balanced`
+- `"Here's a 200-page PDF — what are the risks?"` → needs `files` + `longContext`, floor of `deep`
+- `"Which of these three models should I use for this, under $0.01?"` → ranked inventory + budget verdict
 
-## MCP-only default
+## Requirements
 
-The default package and build are MCP-only. They compile the shared local router used by `mcp/index.mjs`. No model download, browser automation, hosted service, gateway, analytics, or remote inference is required.
+- **Node.js 22+**. That is the entire list.
+- No API key. No account. No model download. No GPU. No network egress at runtime.
 
-Legacy extension research remains in the repository for provenance, but it is not part of the default installation or build.
-
-## Quick start
-
-Requirements:
-
-- Node.js 22 or newer
-- npm
+## Install
 
 ```bash
-npm install
-npm run build
-node /absolute/path/to/switchboard/mcp/index.mjs --transport=stdio
+npx switchboard-mcp --transport=stdio
 ```
 
-Example client configuration:
+<details open>
+<summary><b>Claude Code</b></summary>
+
+```bash
+claude mcp add switchboard -- npx -y switchboard-mcp --transport=stdio
+```
+</details>
+
+<details>
+<summary><b>Claude Desktop</b> — <code>claude_desktop_config.json</code></summary>
 
 ```json
 {
   "mcpServers": {
     "switchboard": {
-      "type": "stdio",
-      "command": "node",
-      "args": [
-        "/absolute/path/to/switchboard/mcp/index.mjs",
-        "--transport=stdio"
-      ]
+      "command": "npx",
+      "args": ["-y", "switchboard-mcp", "--transport=stdio"]
     }
   }
 }
 ```
 
-Standard output is reserved for newline-delimited MCP JSON-RPC messages.
+On Windows, wrap the launcher: `"command": "cmd"`, `"args": ["/c", "npx", "-y", "switchboard-mcp", "--transport=stdio"]`.
+</details>
 
-## Streamable HTTP
+<details>
+<summary><b>VS Code</b> — <code>.vscode/mcp.json</code> (note: <code>servers</code>, not <code>mcpServers</code>)</summary>
+
+```json
+{
+  "servers": {
+    "switchboard": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "switchboard-mcp", "--transport=stdio"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><b>Cursor</b> — <code>~/.cursor/mcp.json</code></summary>
+
+```json
+{
+  "mcpServers": {
+    "switchboard": {
+      "command": "npx",
+      "args": ["-y", "switchboard-mcp", "--transport=stdio"]
+    }
+  }
+}
+```
+</details>
+
+Verify it works without wiring up a client:
 
 ```bash
-node mcp/index.mjs --transport=http --host=127.0.0.1 --port=3764
+npx -y @modelcontextprotocol/inspector --cli npx switchboard-mcp --method tools/list
 ```
 
-Endpoint:
+## How it works
 
-```text
-http://127.0.0.1:3764/mcp
+```mermaid
+flowchart LR
+  P[prompt + context + files] --> S[signal extraction]
+  S --> D[score → tier ladder]
+  D --> F[capability & safety floors]
+  F --> POL[cost / quality policy]
+  POL --> R((decision))
+  R --> T[tier + effort]
+  R --> C[required capabilities]
+  R --> X[execution plan]
+  R --> B[budget verdict]
+  R --> M[model pick from your inventory]
 ```
 
-The HTTP transport is stateful. Initialization returns `MCP-Session-Id`; later requests send that ID and the negotiated `MCP-Protocol-Version`. Sessions expire after 30 minutes of inactivity by default and can be deleted explicitly.
-
-For bearer authentication:
-
-```bash
-export SWITCHBOARD_MCP_TOKEN='a-long-random-secret'
-node mcp/index.mjs --transport=http
-```
-
-Switchboard refuses non-loopback binding without authentication. Host and Origin validation remain separate controls.
+Floors are applied after the policy shift, so no cost policy can route beneath a safety or
+capability requirement.
 
 ## Tools
 
-Switchboard exposes nine MCP tools:
+| Tool | Purpose | Mutates state |
+|---|---|---|
+| `route_request` | Route and plan one request | no |
+| `explain_route` | Concise explanation plus structured evidence | no |
+| `compare_routes` | Compare 2–8 policy or profile variants | no |
+| `simulate_policy` | Simulate variants without changing state | no |
+| `validate_model_inventory` | Validate a provider-independent model inventory | no |
+| `evaluate_router` | Evaluate 1–100 labeled routing cases | no |
+| `record_override` | Record category-only upgrade/downgrade feedback | **yes** |
+| `get_preference_state` | Read aggregate preference counters and weights | no |
+| `reset_preference_state` | Delete aggregate preference state | **yes** |
 
-| Tool | Purpose |
-|---|---|
-| `route_request` | Route and plan one request |
-| `explain_route` | Return a concise explanation and structured evidence |
-| `compare_routes` | Compare two to eight policy or profile variants |
-| `simulate_policy` | Simulate variants without changing state |
-| `validate_model_inventory` | Validate a provider-independent model inventory |
-| `evaluate_router` | Evaluate 1 to 100 labeled routing cases |
-| `record_override` | Record category-only upgrade or downgrade feedback |
-| `get_preference_state` | Read aggregate preference counters and weights |
-| `reset_preference_state` | Delete aggregate preference state |
+Every tool publishes a bounded JSON Schema 2020-12 input **and** output contract, and returns
+`structuredContent` conforming to it.
 
-Every tool publishes a bounded JSON Schema 2020-12 input contract and output contract.
+### `route_request`
 
-## Example route
+| Parameter | Type | Required | Default | Notes |
+|---|---|---|---|---|
+| `prompt` | string | yes | — | 1–64,000 chars. Never stored or logged. |
+| `context` | array | no | `[]` | Up to 8 recent turns, 32,000 chars total |
+| `files` | array | no | `[]` | Up to 20 attachment descriptors (metadata only) |
+| `policy` | enum | no | `balanced` | `best` \| `balanced` \| `fast` \| `conserve` |
+| `profile` | enum | no | `general` | See profiles below |
+| `planMode` | enum | no | `auto` | `auto` \| `single` \| `multi` |
+| `budget` | object | no | — | `maxRelativeCost`, `maxRelativeLatency`, `minQuality`, `maxStages` |
+| `availableModels` | array | no | — | Your inventory; omit to get a tier recommendation only |
+| `currentModelId` | string | no | — | Requires `availableModels` |
+| `categoryBoosts` | object | no | `{}` | Per-category score nudges |
+
+<details>
+<summary>The other eight tools</summary>
+
+`explain_route` takes the same input as `route_request` and returns prose plus evidence.
+`compare_routes` and `simulate_policy` take `{ prompt, variants: [{ label, arguments }] }` with 2–8
+variants. `validate_model_inventory` takes `{ models }`. `evaluate_router` takes
+`{ cases: [{ id, prompt, expectedTier }], includePreferences? }`. `record_override` takes
+`{ categories, recommendedTier, selectedTier }` and nothing else. `get_preference_state` and
+`reset_preference_state` take no arguments. Full schemas: [docs/mcp.md](docs/mcp.md).
+</details>
+
+### Example
+
+Request:
 
 ```json
 {
@@ -103,100 +168,194 @@ Every tool publishes a bounded JSON Schema 2020-12 input contract and output con
   "profile": "security",
   "policy": "balanced",
   "planMode": "multi",
-  "budget": {
-    "maxRelativeCost": 0.8,
-    "maxRelativeLatency": 0.8,
-    "minQuality": 0.7,
-    "maxStages": 3
-  },
+  "budget": { "maxRelativeCost": 0.8, "minQuality": 0.7, "maxStages": 3 },
   "availableModels": [
-    {
-      "id": "deep-code",
-      "tier": "deep",
-      "effortLevels": ["high"],
-      "capabilities": { "code": true },
-      "relativeCost": 0.5,
-      "relativeLatency": 0.5
-    }
+    { "id": "deep-code", "tier": "deep", "effortLevels": ["high"],
+      "capabilities": { "code": true }, "relativeCost": 0.5, "relativeLatency": 0.5 }
   ]
 }
 ```
 
-The result retains the 0.4 routing fields and adds:
-
-- API contract metadata
-- Effective profile and policy
-- Confidence evidence
-- Execution plan
-- Budget assessment
-- Model capability negotiation
-- Aggregate-learning adjustment metadata
-
-The current Switchboard API contract is `2026-07-24`. Additive compatibility starts from 0.4.0.
-
-## Profiles
-
-Built-in profiles:
-
-- `general`
-- `coding`
-- `legal`
-- `research`
-- `creative`
-- `security`
-- `finance`
-- `medical`
-- `low-cost`
-- `low-latency`
-
-Profiles may raise a tier or capability floor. They cannot lower deterministic safety requirements.
-
-## Privacy-preserving learning
-
-`record_override` accepts only:
+Response (abridged):
 
 ```json
 {
-  "categories": ["security"],
-  "recommendedTier": "deep",
-  "selectedTier": "max"
+  "tier": "deep",
+  "effort": "high",
+  "capabilities": { "web": false, "files": false, "vision": false, "longContext": false, "code": true },
+  "confidence": 0.875,
+  "shouldUseJudge": false,
+  "reasons": [
+    { "code": "deep-reasoning", "detail": "The request explicitly asks for rigorous verification or analysis.", "weight": 2.2 },
+    { "code": "high-stakes-domain", "detail": "The task appears to involve a domain where subtle errors can matter.", "weight": 1.35 },
+    { "code": "complex-code-floor", "detail": "Code combined with architecture or high-stakes review requires deep reasoning.", "weight": 1.2 }
+  ],
+  "taskCategories": ["reasoning", "code", "high-stakes"],
+  "executionPlan": { "mode": "multi", "stages": [{ "id": "analyze" }, { "id": "refine" }, { "id": "verify" }] },
+  "budgetAssessment": { "fits": true, "violations": [], "estimatedRelativeCost": 0.5, "estimatedQuality": 1 },
+  "modelResolution": {
+    "status": "recommended",
+    "recommended": { "id": "deep-code", "tier": "deep", "effort": "high", "meetsRequirements": true }
+  }
 }
 ```
 
-It rejects raw prompt, context, file, model, note, and unknown fields. By default, preference state is isolated in memory per MCP session. Persistence is opt-in:
+`modelResolution.status` is `recommended` only when the model actually meets the routed tier, effort
+and capabilities; it is `best-effort` when the closest candidate falls short, and
+`no-compatible-model` when nothing qualifies.
+
+## Profiles
+
+`general`, `coding`, `legal`, `research`, `creative`, `security`, `finance`, `medical`, `low-cost`,
+`low-latency`.
+
+A profile may raise a tier or capability floor. It can never lower a deterministic safety
+requirement.
+
+## When to use it — and when not to
+
+**Use it when** your host can choose among models or reasoning levels, cost and latency actually
+vary across that choice, and requests differ in difficulty.
+
+**Skip it when** your host pins one model, only one model is available, or every request is
+essentially the same shape. A router with nothing to choose between is overhead.
+
+## Configuration
+
+| Setting | Flag | Environment variable | Default |
+|---|---|---|---|
+| Transport | `--transport` | — | `stdio` |
+| Bind host | `--host` | — | `127.0.0.1` |
+| Port | `--port` | — | `3764` |
+| Endpoint path | `--path` | — | `/mcp` |
+| Session TTL (ms) | `--session-ttl-ms` | — | `1800000` |
+| Max sessions | `--max-sessions` | — | `256` |
+| Bearer token | `--token` | `SWITCHBOARD_MCP_TOKEN` | none |
+| Preference state file | — | `SWITCHBOARD_MCP_STATE_PATH` | in-memory |
+| Extra allowed Hosts | — | `SWITCHBOARD_MCP_ALLOWED_HOSTS` | loopback only |
+| Extra allowed Origins | — | `SWITCHBOARD_MCP_ALLOWED_ORIGINS` | loopback only |
+| Router module override | — | `SWITCHBOARD_ROUTER_MODULE` | bundled |
+
+Flags take precedence over environment variables.
+
+### Streamable HTTP
 
 ```bash
-export SWITCHBOARD_MCP_STATE_PATH="$HOME/.local/state/switchboard/preferences.json"
+npx switchboard-mcp --transport=http --host=127.0.0.1 --port=3764
+# endpoint: http://127.0.0.1:3764/mcp
 ```
 
-Persisted state contains only bounded category weights and counters. Learned downgrades cannot bypass high-stakes or required-capability floors.
-
-## Reproducible evaluation
-
-`evaluate_router` excludes learned preference state from baseline metrics by default. Set `includePreferences: true` to observe the adjusted tier while keeping baseline accuracy, under-routing, over-routing, and confusion-matrix calculations preference independent.
-
-## Privacy and security
-
-Switchboard does not persist routing content, model inventories, evaluations, plans, or results. HTTP session state contains protocol and lifecycle metadata only. Optional preference persistence contains category aggregates only.
-
-Security controls include strict bounded schemas, session expiry and deletion, active-session limits, Host and Origin validation, timing-safe bearer-token comparison, atomic preference writes, and a 1 MiB preference-state limit.
-
-## Verification
+Stateful: initialization returns `MCP-Session-Id`, and later requests must send it together with the
+negotiated `MCP-Protocol-Version`. Sessions expire after 30 minutes of inactivity.
 
 ```bash
-npm run verify
+export SWITCHBOARD_MCP_TOKEN='a-long-random-secret'   # bash/zsh
+$env:SWITCHBOARD_MCP_TOKEN = 'a-long-random-secret'   # PowerShell
 ```
 
-This runs type checking, the complete Node test suite, the MCP-only production build, and a real stdio smoke test. No GitHub Actions are required.
+Switchboard refuses to bind outside loopback without a bearer token. Host and Origin validation are
+separate controls that remain on regardless.
+
+## Privacy
+
+| Claim | Enforced by | Test |
+|---|---|---|
+| Prompt text is never persisted | Nothing writes prompt text to disk | `mcp-learning-isolation.test.mjs` |
+| `record_override` accepts categories and tiers only | Bounded schema rejects unknown fields | `mcp-schema-hardening.test.mjs` |
+| No network egress at runtime | Zero runtime dependencies; no outbound calls | `npm ls --omit=dev` is empty |
+| Learned preferences cannot bypass safety floors | Floors applied after all adjustments | `router-properties.test.mjs` |
+| Preference state is per-session unless opted in | In-memory store by default | `mcp-learning-isolation.test.mjs` |
+
+All nine tools are annotated `openWorldHint: false` — Switchboard never reaches outside itself.
+
+Persisted state, when you opt in via `SWITCHBOARD_MCP_STATE_PATH`, contains only bounded per-category
+counters and weights.
+
+## Honest limitations
+
+Switchboard is a **pre-generation, heuristic** router: it predicts from the request alone, before any
+model runs, using keyword signals and a scored tier ladder. It never observes model output, so it
+cannot verify an answer or escalate after the fact.
+
+Measured consequences, from `npm run benchmark:oracle`:
+
+- **On a public academic benchmark it is not distinguishable from a random router at matched cost**
+  (HELM `lite:gsm`, 1000 prompts × 49 priced models: 65.6% vs 65.7% random, p = 0.677). It routes
+  97% of those prompts to one tier because no English keyword fires on math word problems.
+- The signals are **English-only**. Other scripts are detected and held at a `balanced` floor with a
+  judge requested, rather than guessed at — but they are not really routed.
+- `confidence` is an **evidence score, not a calibrated probability**. Do not threshold on it as if
+  it were one.
+- The **reasoning-effort axis is unevaluated** against measured outcomes; no public dataset labels it.
+
+The oracle on that same corpus reaches 99.6% at 1/400th the cost of always-max, so the headroom for
+routing is real — Switchboard just does not capture much of it yet. Full numbers, caveats and
+reproduction steps: [benchmarks/README.md](benchmarks/README.md).
+
+## Compatibility
+
+| | |
+|---|---|
+| MCP protocol revisions | `2025-11-25`, `2025-06-18`, `2025-03-26` |
+| Switchboard API contract | `2026-07-24` |
+| Additive compatibility from | `0.4.0` |
+| Node.js | 22+ |
+
+## Troubleshooting
+
+| Problem | Cause | Fix |
+|---|---|---|
+| Server missing from the client | Config not reloaded | Fully restart the host app |
+| "spawn npx ENOENT" on Windows | `npx` is not directly executable | Use `"command": "cmd"`, `"args": ["/c", "npx", ...]` |
+| Server starts then disconnects | Something wrote to stdout | stdout is reserved for JSON-RPC; use `console.error` |
+| Works in terminal, not in client | Relative path in config | Use `npx`, or an absolute path to `mcp/index.mjs` |
+| `EADDRINUSE` on HTTP | Port already taken | `--port=0` for an ephemeral port |
+| HTTP 404 after a while | Session expired (30 min idle) | Re-initialize; raise `--session-ttl-ms` |
+| HTTP 400 on every call | Missing `MCP-Protocol-Version` | Send it with `MCP-Session-Id` after initialize |
+| Node version errors | Node < 22 | `node --version`; upgrade to 22+ |
+
+Claude Desktop logs: `~/Library/Logs/Claude/mcp*.log` (macOS) or `%APPDATA%\Claude\logs\` (Windows).
+
+```bash
+tail -f ~/Library/Logs/Claude/mcp*.log
+```
+
+## Development
+
+```bash
+npm install
+npm run verify          # typecheck, lint, format, tests, build, stdio smoke
+npm run benchmark       # routing regression corpus
+npm run eval:fetch      # download HELM outcome data (no API key)
+npm run benchmark:oracle
+```
+
+stdout carries newline-delimited JSON-RPC only. A stray `console.log` anywhere under `mcp/` or
+`src/` corrupts the stream and the client silently drops the connection — the linter fails the build
+if you add one. Use `console.error`.
 
 ## Documentation
 
-- [MCP reference](docs/mcp.md)
-- [Documentation index](docs/README.md)
-- [Aggregate learning](docs/mcp-learning.md)
+- [MCP reference](docs/mcp.md) — full tool and resource contracts
+- [Routing evaluation](benchmarks/README.md) — how routing quality is measured, and what it measures
 - [Privacy and threat model](docs/privacy.md)
-- [Contributing](CONTRIBUTING.md)
+- [Aggregate learning](docs/mcp-learning.md)
+- [Architecture](docs/architecture/overview.md)
+- [Changelog](CHANGELOG.md)
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Adding a tool is a permanent public API commitment — open an
+issue before writing the code.
+
+## Support
+
+Open an issue: https://github.com/zgbrenner/switchboard/issues
+
+## Security
+
+Report vulnerabilities privately. See [SECURITY.md](SECURITY.md).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

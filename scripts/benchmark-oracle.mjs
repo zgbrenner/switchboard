@@ -11,9 +11,10 @@
  * READ THE CAVEATS THIS PRINTS. The corpus is a public academic benchmark, not the agentic and
  * authoring traffic Switchboard is designed for, and the gap matters when interpreting the numbers.
  */
-import { readFile } from 'node:fs/promises';
+
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 
 const TIERS = ['fast', 'balanced', 'deep', 'max'];
 const dataPath = process.argv.find((a) => a.startsWith('--data='))?.slice('--data='.length) ?? 'benchmarks/data/helm-gsm.jsonl';

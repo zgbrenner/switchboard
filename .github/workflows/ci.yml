@@ -1,0 +1,76 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify (node ${{ matrix.node }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is the largest desktop MCP population, and this server resolves module paths,
+        # writes a state file, and reads newline-delimited stdio -- all of which diverge there.
+        os: [ubuntu-latest, windows-latest]
+        node: ['22', '24']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - run: npm ci
+
+      # Exactly what a developer runs locally, so CI and local cannot drift.
+      - run: npm run verify
+
+      - name: Assert the shipped package has no runtime dependencies
+        run: node -e "const p=require('./package.json');const d=Object.keys(p.dependencies||{});if(d.length){console.error('unexpected runtime dependencies: '+d);process.exit(1)}"
+        shell: bash
+
+  package:
+    name: packaged tarball starts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+
+      # The only check that catches a missing `files` entry or a missing build hook: install the
+      # real tarball into a clean directory and drive the binary over stdio.
+      - name: Pack and install into a clean project
+        run: |
+          npm pack --silent
+          mkdir -p /tmp/consumer && cd /tmp/consumer
+          npm init -y >/dev/null
+          npm install --omit=dev "$GITHUB_WORKSPACE"/switchboard-mcp-*.tgz
+
+      - name: Drive the installed binary over stdio
+        run: |
+          cd /tmp/consumer
+          printf '%s\n' \
+            '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1.0.0"}}}' \
+            '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+            '{"jsonrpc":"2.0","id":2,"method":"tools/list"}' \
+            | npx switchboard-mcp --transport=stdio > out.jsonl
+          node -e "
+            const lines=require('fs').readFileSync('out.jsonl','utf8').trim().split('\n').map(JSON.parse);
+            const tools=lines.find(m=>m.id===2)?.result?.tools ?? [];
+            if(tools.length!==9){console.error('expected 9 tools, got '+tools.length);process.exit(1)}
+            console.log('installed package served '+tools.length+' tools');
+          "

@@ -1,6 +1,6 @@
 # Contributing to Switchboard
 
-Switchboard's primary current interface is the local MCP server. The repository also retains a Chromium extension foundation and experimental local-model tooling.
+Switchboard is a local MCP server. It has no runtime dependencies; everything under `mcp/` imports only `mcp/` and Node builtins, and the routing engine in `src/` compiles to `dist/js/`.
 
 ## Local verification
 
@@ -107,21 +107,6 @@ Add a failing benchmark or unit test before changing:
 - Preference adjustments
 
 Evaluate harmful under-routing separately from wasteful over-routing. A lower average error rate does not justify a regression in consequential under-routing.
-
-## Browser-extension foundation
-
-Keep routing, file extraction, provider adapters, storage, and model-pack validation in separate modules.
-
-Provider UI selectors must:
-
-- Prefer accessible labels, roles, and stable test identifiers
-- Avoid positional selectors when possible
-- Use bounded retries
-- Verify a compatible visible selection
-- Preserve the draft
-- Fail open instead of blocking send
-
-Do not add broad host permissions, raw prompt persistence, remote executable code, or runtime downloads from moving model revisions.
 
 ## File handling
 

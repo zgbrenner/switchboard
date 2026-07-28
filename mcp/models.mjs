@@ -123,7 +123,12 @@ export function resolveModelInventory(decision, models, options = {}) {
   const details = negotiation(decision, ranked.length, rejected);
   if (ranked.length === 0) return { status: 'no-compatible-model', recommended: null, alternatives: [], negotiation: details };
   return {
-    status: 'recommended',
+    // A candidate that survived capability rejection can still sit below the routed tier or effort.
+    // Reporting that as 'recommended' told the host the model met the requirements when the same
+    // object said meetsRequirements: false, so 'best-effort' names the shortfall instead. The
+    // candidate is still returned, because the host is usually better off with the closest match
+    // plus an honest label than with nothing.
+    status: ranked[0].meetsRequirements ? 'recommended' : 'best-effort',
     recommended: ranked[0],
     alternatives: ranked.slice(1, 4),
     negotiation: details,

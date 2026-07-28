@@ -184,7 +184,7 @@ export const ROUTE_OUTPUT_SCHEMA_V05 = {
       additionalProperties: false,
       required: ['status', 'recommended', 'alternatives', 'negotiation'],
       properties: {
-        status: { type: 'string', enum: ['not-provided', 'recommended', 'no-compatible-model'] },
+        status: { type: 'string', enum: ['not-provided', 'recommended', 'best-effort', 'no-compatible-model'] },
         recommended: { anyOf: [modelSchema, { type: 'null' }] },
         alternatives: { type: 'array', maxItems: 3, items: modelSchema },
         negotiation: negotiationSchema,
