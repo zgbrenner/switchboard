@@ -37,8 +37,17 @@ jobs:
       - run: npm run verify
 
       - name: Assert the shipped package has no runtime dependencies
-        run: node -e "const p=require('./package.json');const d=Object.keys(p.dependencies||{});if(d.length){console.error('unexpected runtime dependencies: '+d);process.exit(1)}"
         shell: bash
+        run: |
+          node -e "
+            const pkg = require('./package.json');
+            const deps = Object.keys(pkg.dependencies || {});
+            if (deps.length) {
+              console.error('unexpected runtime dependencies -> ' + deps.join(', '));
+              process.exit(1);
+            }
+            console.log('confirmed zero runtime dependencies');
+          "
 
   package:
     name: packaged tarball starts
