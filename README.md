@@ -5,23 +5,33 @@
 
 # Switchboard
 
-**Switchboard tells your AI agent how hard to think before it starts.** It reads a request and
-answers with a quality tier, a reasoning-effort level, the capabilities the task needs, a
-single- or multi-stage execution plan, and — if you hand it your model list — which model to call.
-It runs entirely on your machine, needs no API key, and never sees your prompt leave the process.
+**Switchboard is a pre-flight check for AI requests.** Before your agent calls a model, it answers:
+what capabilities does this task actually need, what is the minimum safe quality tier, how many
+stages should this take, does it fit my budget, and which model in my inventory qualifies. It runs
+entirely on your machine, needs no API key, and never sees your prompt leave the process.
 
 > Switchboard is **advisory**. Your host decides whether to call it, whether to follow it, and which
 > model to actually invoke.
+
+**What is measured, and what is not.** The capability detection, safety floors, budget arithmetic and
+model filtering are deterministic and covered by tests — those are the parts to rely on. The *tier*
+and *effort* suggestions are keyword heuristics, and on a public academic benchmark they are **not
+distinguishable from a random router at matched cost**. Read
+[the evaluation](benchmarks/README.md) before treating a tier as a quality claim. That measurement is
+Switchboard's own, and it is reproducible with one command.
 
 ## Use cases
 
 Things a user says, and what Switchboard answers underneath:
 
-- `"Audit this auth flow for race conditions"` → `deep` / `high` effort, needs `code`, 3-stage plan
-- `"Make this email friendlier"` → `fast` / `low` effort, no special capabilities, single stage
-- `"What changed in the EU AI Act this month?"` → needs `web`, recency signal, `balanced`
 - `"Here's a 200-page PDF — what are the risks?"` → needs `files` + `longContext`, floor of `deep`
-- `"Which of these three models should I use for this, under $0.01?"` → ranked inventory + budget verdict
+- `"Audit this auth flow for race conditions"` → needs `code`, high-stakes floor, 3-stage plan
+- `"What changed in the EU AI Act this month?"` → needs `web`, recency signal
+- `"Which of these three models should I use, under $0.01?"` → ranked inventory + budget verdict
+- `"Make this email friendlier"` → no special capabilities, single stage
+
+The first four are the load-bearing ones: each turns on a requirement the request genuinely implies,
+not on a guess about how hard it is.
 
 ## Requirements
 
@@ -276,6 +286,15 @@ counters and weights.
 Switchboard is a **pre-generation, heuristic** router: it predicts from the request alone, before any
 model runs, using keyword signals and a scored tier ladder. It never observes model output, so it
 cannot verify an answer or escalate after the fact.
+
+It is worth separating the two halves of what it returns, because they are not equally well founded:
+
+| | Basis | Evidence |
+|---|---|---|
+| Required capabilities, safety and capability floors, execution plan, budget verdict, model filtering | Deterministic rules over explicit request properties | Covered by the test suite; floors are asserted inviolable under every policy |
+| Suggested **tier** and **effort** | English keyword signals and a scored ladder | Not distinguishable from random at matched cost on the corpus below |
+
+If you take one thing from Switchboard, take the first row.
 
 Measured consequences, from `npm run benchmark:oracle`:
 
