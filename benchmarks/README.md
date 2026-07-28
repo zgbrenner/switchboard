@@ -107,15 +107,61 @@ conflicting instructions, multilingual prompts, adversarial input, and policy tr
 Do not collect raw user prompts. New cases must be authored, properly licensed, or derived only from
 privacy-preserving aggregates that cannot reconstruct user content.
 
+## Diagnosing the gap
+
+`benchmark:oracle` reports two figures that say *why* a router is or is not working, not just
+whether it is.
+
+**Ceiling (perfect ordering).** The cheapest-correct oracle picks a model after seeing the answer,
+so it is not a target any router could hit. The ceiling is the fair one: it holds the router's own
+tier mix fixed and hands the expensive tiers to the prompts with the most to gain. It is the most
+any router could score by ordering these prompts perfectly.
+
+**Headroom captured.** Where the router sits between random and that ceiling.
+
+On `lite:gsm` today: random 65.7% → Switchboard 65.6% → perfect ordering **65.9%**.
+
+That ceiling is the finding. Perfect ordering is worth only +0.2 points here — because the router
+puts 970 of 1000 prompts in a single tier, and there is nothing to order in a constant assignment.
+**The binding constraint is a degenerate tier distribution, not a weak difficulty signal.** Any work
+on ranking prompts is capped at +0.2 points until the router spreads across tiers on this
+distribution at all.
+
+## What has been tried
+
+Recorded so it is not repeated. Discipline: deterministic 60/20/20 folds by hash of `instance_id`,
+signals designed on train only, dev for go/no-go, two entirely unseen domains (`med_qa`,
+`legalbench`) for transfer, test touched once.
+
+| Approach | Best held-out result | Verdict |
+|---|---|---|
+| Structural/length features | gsm dev +0.003 (p=0.32); med_qa −0.002; legalbench −0.008 | Did not replicate; negative on transfer |
+| Hashed TF-IDF + cosine k-NN | gsm dev +0.002 (p=0.36); pooled p=0.23–0.70 | No signal held out |
+| Pre-registered easy-quartile rule | +0.003…+0.007 on 3 of 4 corpora, p=0.11–0.13 | Consistently positive, never significant |
+| Cascade (needs generated output) | gsm +0.010 at recall 0.9; med_qa negative at every verifier quality | Works only where the cheap tier is strong |
+
+Two things worth knowing from that work:
+
+- **Length predicts difficulty at ρ = −0.37 on math word problems and −0.13 on medical QA.** The
+  feature that looks strong in one domain is close to useless in another, which is why anything
+  tuned on a single corpus should be assumed not to transfer until shown otherwise.
+- **Tier-gain is inverted-U in difficulty** (gsm, by hardness band: 0.05 / 0.21 / 0.29 / 0.36 /
+  0.25). The easiest prompts gain almost nothing from an upgrade, and so do the hopeless ones.
+  A monotone "harder → more expensive" rule is the wrong shape.
+
 ## What would close the gap
 
 Ranked by expected value, honestly:
 
-1. **A difficulty signal that is not keyword-based.** Nothing in the current design distinguishes a
-   hard math problem from an easy one, which is exactly what this corpus requires.
-2. **An outcome-labelled corpus from Switchboard's real distribution.** The strongest public
-   candidate, RouterBench, ships only as Python pickles and is unavailable in some environments.
-3. **Calibrating `confidence` against measured outcomes**, so it becomes a probability rather than
+1. **Make the tier distribution non-degenerate on realistic traffic.** Nothing else can pay until
+   this does — see the ceiling above.
+2. **Recommend cascades where the cheap tier is strong.** Information observed *after* generation
+   converts into real gains where pre-generation prediction does not, and Switchboard already emits
+   multi-stage execution plans. It is advisory, so the host performs the verification.
+3. **An outcome-labelled corpus from Switchboard's real distribution.** Every result here is on
+   single-turn academic QA. The strongest public candidate, RouterBench, ships only as Python
+   pickles and is unavailable in some environments.
+4. **Calibrating `confidence` against measured outcomes**, so it becomes a probability rather than
    the evidence score it is today.
 
 ## Reading a change

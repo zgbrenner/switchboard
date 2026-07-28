@@ -134,6 +134,45 @@ const oracle = { accuracy: oracleCorrect / prompts.length, costPer1k: (oracleCos
 
 const bestSingle = models.reduce((a, b) => (b.accuracy > a.accuracy ? b : a));
 
+// ---- Ceiling for any prompt-only router -----------------------------------------------------
+// The cheapest-correct oracle above is not a fair target: it picks a *model* after seeing the
+// answer. This ceiling is the fair one. It routes by each prompt's true tier-sensitivity --
+// acc(max) - acc(fast), i.e. how much an upgrade would actually buy -- while holding the same tier
+// mix Switchboard chose. It is the most any router could score by ordering these prompts perfectly,
+// and it is what the gap below should be read against.
+function tierSensitivityCeiling() {
+  const gains = decisions.map(({ entry }) => tierOutcome(entry, TIERS.at(-1)).correct - tierOutcome(entry, TIERS[0]).correct);
+  const order = decisions.map((_, i) => i).sort((a, b) => gains[b] - gains[a]);
+  // Hand the most expensive tiers to the prompts with the most to gain, keeping the mix identical.
+  const mix = decisions.map((d) => d.tier).sort((a, b) => TIERS.indexOf(b) - TIERS.indexOf(a));
+  const assigned = new Array(decisions.length);
+  order.forEach((promptIndex, rank) => {
+    assigned[promptIndex] = mix[rank];
+  });
+  return score(decisions.map((d, i) => ({ entry: d.entry, tier: assigned[i] })));
+}
+const ceiling = tierSensitivityCeiling();
+
+// ---- Best random tier mix at Switchboard's exact cost ----------------------------------------
+// A fairer economic comparison than the shuffle: what accuracy could you buy with the same money by
+// mixing two constant tiers at random, with no per-prompt decision at all? A router has to beat
+// this to justify existing.
+function bestMixAtBudget(budget) {
+  let best = null;
+  for (let i = 0; i < TIERS.length; i++) {
+    for (let j = i + 1; j < TIERS.length; j++) {
+      const lo = constant[TIERS[i]];
+      const hi = constant[TIERS[j]];
+      if (budget < lo.costPer1k || budget > hi.costPer1k) continue;
+      const share = (budget - lo.costPer1k) / (hi.costPer1k - lo.costPer1k);
+      const accuracy = lo.accuracy + share * (hi.accuracy - lo.accuracy);
+      if (!best || accuracy > best.accuracy) best = { accuracy, mix: `${TIERS[i]}/${TIERS[j]}` };
+    }
+  }
+  return best;
+}
+const matchedMix = bestMixAtBudget(switchboard.costPer1k);
+
 // Random-at-matched-cost: keep the router's tier distribution, shuffle which prompt gets which.
 // If the router carries no signal about difficulty, this scores the same and costs the same.
 const random = lcg(20260728);
@@ -196,7 +235,21 @@ line('best single model', { accuracy: bestSingle.accuracy, costPer1k: bestSingle
 line('SWITCHBOARD', switchboard);
 line('oracle (cheapest correct)', oracle);
 
+line('ceiling (perfect ordering)', ceiling);
+
 console.log(`\n  Switchboard accuracy 95% CI: ${pct(bootAccuracies[25])} - ${pct(bootAccuracies[975])} (bootstrap, n=1000)`);
+if (matchedMix) {
+  const delta = switchboard.accuracy - matchedMix.accuracy;
+  console.log(
+    `  Best random ${matchedMix.mix} mix at the same spend: ${pct(matchedMix.accuracy)}` +
+      `  (Switchboard ${delta >= 0 ? '+' : ''}${(delta * 100).toFixed(1)} points)`,
+  );
+}
+const captured = (switchboard.accuracy - permMean) / (ceiling.accuracy - permMean || 1);
+console.log(
+  `  Headroom captured: ${(captured * 100).toFixed(1)}% ` +
+    `(random ${pct(permMean)} -> Switchboard ${pct(switchboard.accuracy)} -> perfect ordering ${pct(ceiling.accuracy)})`,
+);
 console.log(`  Tier distribution: ${TIERS.map((t) => `${t}=${tierCounts[t]}`).join('  ')}`);
 console.log(`  Oracle gap closed vs always-fast: ${(oracleGapClosed * 100).toFixed(1)}%`);
 console.log(
