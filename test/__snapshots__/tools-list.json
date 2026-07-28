@@ -1,0 +1,3919 @@
+{
+  "tools": [
+    {
+      "name": "route_request",
+      "title": "Route AI Request",
+      "description": "Classify a request locally and return tier, effort, capabilities, confidence evidence, an execution plan, a budget assessment, aggregate-learning metadata, and an optional concrete model recommendation.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64000,
+            "pattern": ".*\\S.*",
+            "description": "The request to route. Analysed in-process and never stored, logged, or transmitted."
+          },
+          "context": {
+            "type": "array",
+            "maxItems": 8,
+            "description": "Up to 8 recent conversation turns, oldest first. Used only to interpret short follow-ups such as \"do it again\" whose difficulty is carried by the earlier turn. Capped at 32,000 characters in total.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "role",
+                "text"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "description": "Who produced this turn."
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 12000,
+                  "pattern": ".*\\S.*",
+                  "description": "The turn text."
+                }
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "description": "Metadata describing one attachment. Switchboard never receives file bytes.",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": ".*\\S.*",
+                  "description": "File name, used for type inference only."
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000000,
+                  "description": "File size in bytes."
+                },
+                "detectedType": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "markdown",
+                    "html",
+                    "json",
+                    "csv",
+                    "pdf",
+                    "docx",
+                    "pptx",
+                    "xlsx",
+                    "zip",
+                    "image",
+                    "unknown"
+                  ],
+                  "description": "Host-detected file type."
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "MIME type, for example application/pdf."
+                },
+                "textLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Characters of text the host extracted. Drives the long-context floor."
+                },
+                "excerpt": {
+                  "type": "string",
+                  "maxLength": 4000,
+                  "description": "Short excerpt used for topic signals. Send only what you are willing to share."
+                },
+                "warnings": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "description": "Extraction warnings, for example truncation or a parse failure."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capabilities this attachment requires of the model.",
+                  "properties": {
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The attachment must be interpreted visually."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The attachment needs a large context window."
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Attachment metadata. Any attachment requires a file-capable model and raises the floor to at least balanced."
+          },
+          "policy": {
+            "type": "string",
+            "enum": [
+              "best",
+              "balanced",
+              "fast",
+              "conserve"
+            ],
+            "description": "Cost/quality preference. \"best\" biases upward, \"fast\" and \"conserve\" bias downward, \"balanced\" is neutral. A policy can move a borderline request one tier but can never route beneath a capability or safety floor. Default: balanced."
+          },
+          "categoryBoosts": {
+            "type": "object",
+            "maxProperties": 64,
+            "additionalProperties": {
+              "type": "number",
+              "minimum": -0.35,
+              "maximum": 0.35
+            },
+            "description": "Per-category score nudges, keyed by task category (for example \"code\" or \"high-stakes\"). Bounded to +/-0.35 so a boost can influence a borderline decision without overriding a floor."
+          },
+          "availableModels": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "description": "One model the host can actually invoke. Provider-independent by design: Switchboard never assumes a vendor.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": ".*\\S.*",
+                  "description": "Host-side identifier, returned verbatim in the recommendation."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Human-readable name."
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Model family, used only for grouping."
+                },
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ],
+                  "description": "Quality tier this model belongs to."
+                },
+                "effortLevels": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "description": "Reasoning-effort levels this model supports. An empty array means effort is not selectable."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capability flags. Omitted keys mean unknown, which is treated differently from an explicit false.",
+                  "properties": {
+                    "web": {
+                      "type": "boolean",
+                      "description": "The task needs live web access or current sources."
+                    },
+                    "files": {
+                      "type": "boolean",
+                      "description": "The task needs the model to read attached files."
+                    },
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The task needs image understanding."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The task needs a large context window."
+                    },
+                    "code": {
+                      "type": "boolean",
+                      "description": "The task needs code understanding or generation."
+                    }
+                  }
+                },
+                "relativeCost": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Cost normalised across your own inventory, where 1 is your most expensive model."
+                },
+                "relativeLatency": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Latency normalised across your own inventory, where 1 is your slowest model."
+                },
+                "available": {
+                  "type": "boolean",
+                  "description": "Set false to exclude the model from selection without removing it."
+                }
+              }
+            },
+            "description": "Your model inventory. Supply it to receive a concrete model recommendation; omit it to receive a tier recommendation only."
+          },
+          "currentModelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Model already in use, preferred on ties to avoid pointless switching mid-conversation. Requires availableModels."
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "general",
+              "coding",
+              "legal",
+              "research",
+              "creative",
+              "security",
+              "finance",
+              "medical",
+              "low-cost",
+              "low-latency"
+            ],
+            "description": "Domain profile. A profile may raise a tier or capability floor; it can never lower one. Default: general."
+          },
+          "budget": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Optional ceilings. Switchboard reports whether the routed plan fits; it never silently violates a capability or safety floor to satisfy a budget.",
+            "properties": {
+              "maxRelativeCost": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeCost."
+              },
+              "maxRelativeLatency": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeLatency."
+              },
+              "minQuality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Smallest acceptable normalised quality."
+              },
+              "maxStages": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "description": "Largest acceptable number of execution-plan stages."
+              }
+            }
+          },
+          "planMode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "auto",
+              "multi"
+            ],
+            "description": "\"single\" forces a one-stage plan, \"multi\" forces staged execution, \"auto\" decides from difficulty. Default: auto."
+          },
+          "apiVersion": {
+            "type": "string",
+            "enum": [
+              "2026-07-24"
+            ],
+            "description": "Pin the response contract version. Defaults to the current contract."
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "tier",
+          "effort",
+          "capabilities",
+          "confidence",
+          "shouldUseJudge",
+          "reasons",
+          "scores",
+          "taskCategories",
+          "apiVersion",
+          "compatibility",
+          "effectiveProfile",
+          "effectivePolicy",
+          "learningAdjustment",
+          "confidenceEvidence",
+          "executionPlan",
+          "budgetAssessment",
+          "modelResolution"
+        ],
+        "properties": {
+          "tier": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "balanced",
+              "deep",
+              "max"
+            ]
+          },
+          "effort": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "max"
+            ]
+          },
+          "capabilities": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "web",
+              "files",
+              "vision",
+              "longContext",
+              "code"
+            ],
+            "properties": {
+              "web": {
+                "type": "boolean"
+              },
+              "files": {
+                "type": "boolean"
+              },
+              "vision": {
+                "type": "boolean"
+              },
+              "longContext": {
+                "type": "boolean"
+              },
+              "code": {
+                "type": "boolean"
+              }
+            }
+          },
+          "confidence": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "shouldUseJudge": {
+            "type": "boolean"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "detail",
+                "weight"
+              ],
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "detail": {
+                  "type": "string"
+                },
+                "weight": {
+                  "type": "number"
+                }
+              }
+            }
+          },
+          "scores": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fast",
+              "balanced",
+              "deep",
+              "max"
+            ],
+            "properties": {
+              "fast": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "balanced": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "deep": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "max": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "taskCategories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "apiVersion": {
+            "type": "string",
+            "enum": [
+              "2026-07-24"
+            ]
+          },
+          "compatibility": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "additiveFrom",
+              "responseContract"
+            ],
+            "properties": {
+              "additiveFrom": {
+                "type": "string",
+                "const": "0.4.0"
+              },
+              "responseContract": {
+                "type": "string",
+                "const": "2026-07-24"
+              }
+            }
+          },
+          "effectiveProfile": {
+            "type": "string",
+            "enum": [
+              "general",
+              "coding",
+              "legal",
+              "research",
+              "creative",
+              "security",
+              "finance",
+              "medical",
+              "low-cost",
+              "low-latency"
+            ]
+          },
+          "effectivePolicy": {
+            "type": "string",
+            "enum": [
+              "best",
+              "balanced",
+              "fast",
+              "conserve"
+            ]
+          },
+          "learningAdjustment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "applied",
+              "bias"
+            ],
+            "properties": {
+              "applied": {
+                "type": "boolean"
+              },
+              "bias": {
+                "type": "number",
+                "minimum": -0.35,
+                "maximum": 0.35
+              },
+              "reason": {
+                "type": "string"
+              },
+              "fromTier": {
+                "type": "string",
+                "enum": [
+                  "fast",
+                  "balanced",
+                  "deep",
+                  "max"
+                ]
+              },
+              "toTier": {
+                "type": "string",
+                "enum": [
+                  "fast",
+                  "balanced",
+                  "deep",
+                  "max"
+                ]
+              }
+            }
+          },
+          "confidenceEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "overall",
+              "scoreMargin",
+              "deterministicEvidence",
+              "capabilityCertainty",
+              "agreement"
+            ],
+            "properties": {
+              "overall": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "scoreMargin": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "deterministicEvidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "capabilityCertainty": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "agreement": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "executionPlan": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "stages"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "multi"
+                ]
+              },
+              "stages": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "purpose",
+                    "tier",
+                    "effort",
+                    "capabilities",
+                    "optional"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "answer",
+                        "analyze",
+                        "refine",
+                        "verify"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "fast",
+                        "balanced",
+                        "deep",
+                        "max"
+                      ]
+                    },
+                    "effort": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "max"
+                      ]
+                    },
+                    "capabilities": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "web",
+                        "files",
+                        "vision",
+                        "longContext",
+                        "code"
+                      ],
+                      "properties": {
+                        "web": {
+                          "type": "boolean"
+                        },
+                        "files": {
+                          "type": "boolean"
+                        },
+                        "vision": {
+                          "type": "boolean"
+                        },
+                        "longContext": {
+                          "type": "boolean"
+                        },
+                        "code": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "budgetAssessment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fits",
+              "violations",
+              "modelCompatibility",
+              "estimatedRelativeCost",
+              "estimatedRelativeLatency",
+              "estimatedQuality",
+              "constraints"
+            ],
+            "properties": {
+              "fits": {
+                "type": "boolean"
+              },
+              "violations": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "cost",
+                    "latency",
+                    "quality",
+                    "modelRequirements"
+                  ]
+                }
+              },
+              "modelCompatibility": {
+                "type": "string",
+                "enum": [
+                  "not-evaluated",
+                  "compatible",
+                  "incompatible"
+                ]
+              },
+              "estimatedRelativeCost": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "estimatedRelativeLatency": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "estimatedQuality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "constraints": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "maxRelativeCost",
+                  "maxRelativeLatency",
+                  "minQuality",
+                  "maxStages"
+                ],
+                "properties": {
+                  "maxRelativeCost": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "maxRelativeLatency": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minQuality": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "maxStages": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4
+                  }
+                }
+              }
+            }
+          },
+          "modelResolution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "recommended",
+              "alternatives",
+              "negotiation"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "not-provided",
+                  "recommended",
+                  "best-effort",
+                  "no-compatible-model"
+                ]
+              },
+              "recommended": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "tier",
+                      "effort",
+                      "meetsRequirements",
+                      "unknownCapabilities",
+                      "relativeCost",
+                      "relativeLatency",
+                      "score"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "family": {
+                        "type": "string"
+                      },
+                      "tier": {
+                        "type": "string",
+                        "enum": [
+                          "fast",
+                          "balanced",
+                          "deep",
+                          "max"
+                        ]
+                      },
+                      "effort": {
+                        "type": "string",
+                        "enum": [
+                          "low",
+                          "medium",
+                          "high",
+                          "max"
+                        ]
+                      },
+                      "meetsRequirements": {
+                        "type": "boolean"
+                      },
+                      "unknownCapabilities": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "web",
+                            "files",
+                            "vision",
+                            "longContext",
+                            "code"
+                          ]
+                        }
+                      },
+                      "relativeCost": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "relativeLatency": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "score": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "alternatives": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "tier",
+                    "effort",
+                    "meetsRequirements",
+                    "unknownCapabilities",
+                    "relativeCost",
+                    "relativeLatency",
+                    "score"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "family": {
+                      "type": "string"
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "fast",
+                        "balanced",
+                        "deep",
+                        "max"
+                      ]
+                    },
+                    "effort": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "max"
+                      ]
+                    },
+                    "meetsRequirements": {
+                      "type": "boolean"
+                    },
+                    "unknownCapabilities": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "web",
+                          "files",
+                          "vision",
+                          "longContext",
+                          "code"
+                        ]
+                      }
+                    },
+                    "relativeCost": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "relativeLatency": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              "negotiation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "requiredCapabilities",
+                  "eligibleCount",
+                  "rejected"
+                ],
+                "properties": {
+                  "requiredCapabilities": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "files",
+                        "vision",
+                        "longContext",
+                        "code"
+                      ]
+                    }
+                  },
+                  "eligibleCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 64
+                  },
+                  "rejected": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "reasons"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "minItems": 1,
+                          "uniqueItems": true,
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "explain_route",
+      "title": "Explain Route",
+      "description": "Route a request and return a concise explanation plus structured evidence.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64000,
+            "pattern": ".*\\S.*",
+            "description": "The request to route. Analysed in-process and never stored, logged, or transmitted."
+          },
+          "context": {
+            "type": "array",
+            "maxItems": 8,
+            "description": "Up to 8 recent conversation turns, oldest first. Used only to interpret short follow-ups such as \"do it again\" whose difficulty is carried by the earlier turn. Capped at 32,000 characters in total.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "role",
+                "text"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "description": "Who produced this turn."
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 12000,
+                  "pattern": ".*\\S.*",
+                  "description": "The turn text."
+                }
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "description": "Metadata describing one attachment. Switchboard never receives file bytes.",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": ".*\\S.*",
+                  "description": "File name, used for type inference only."
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000000,
+                  "description": "File size in bytes."
+                },
+                "detectedType": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "markdown",
+                    "html",
+                    "json",
+                    "csv",
+                    "pdf",
+                    "docx",
+                    "pptx",
+                    "xlsx",
+                    "zip",
+                    "image",
+                    "unknown"
+                  ],
+                  "description": "Host-detected file type."
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "MIME type, for example application/pdf."
+                },
+                "textLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Characters of text the host extracted. Drives the long-context floor."
+                },
+                "excerpt": {
+                  "type": "string",
+                  "maxLength": 4000,
+                  "description": "Short excerpt used for topic signals. Send only what you are willing to share."
+                },
+                "warnings": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "description": "Extraction warnings, for example truncation or a parse failure."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capabilities this attachment requires of the model.",
+                  "properties": {
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The attachment must be interpreted visually."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The attachment needs a large context window."
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Attachment metadata. Any attachment requires a file-capable model and raises the floor to at least balanced."
+          },
+          "policy": {
+            "type": "string",
+            "enum": [
+              "best",
+              "balanced",
+              "fast",
+              "conserve"
+            ],
+            "description": "Cost/quality preference. \"best\" biases upward, \"fast\" and \"conserve\" bias downward, \"balanced\" is neutral. A policy can move a borderline request one tier but can never route beneath a capability or safety floor. Default: balanced."
+          },
+          "categoryBoosts": {
+            "type": "object",
+            "maxProperties": 64,
+            "additionalProperties": {
+              "type": "number",
+              "minimum": -0.35,
+              "maximum": 0.35
+            },
+            "description": "Per-category score nudges, keyed by task category (for example \"code\" or \"high-stakes\"). Bounded to +/-0.35 so a boost can influence a borderline decision without overriding a floor."
+          },
+          "availableModels": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "description": "One model the host can actually invoke. Provider-independent by design: Switchboard never assumes a vendor.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": ".*\\S.*",
+                  "description": "Host-side identifier, returned verbatim in the recommendation."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Human-readable name."
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Model family, used only for grouping."
+                },
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ],
+                  "description": "Quality tier this model belongs to."
+                },
+                "effortLevels": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "description": "Reasoning-effort levels this model supports. An empty array means effort is not selectable."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capability flags. Omitted keys mean unknown, which is treated differently from an explicit false.",
+                  "properties": {
+                    "web": {
+                      "type": "boolean",
+                      "description": "The task needs live web access or current sources."
+                    },
+                    "files": {
+                      "type": "boolean",
+                      "description": "The task needs the model to read attached files."
+                    },
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The task needs image understanding."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The task needs a large context window."
+                    },
+                    "code": {
+                      "type": "boolean",
+                      "description": "The task needs code understanding or generation."
+                    }
+                  }
+                },
+                "relativeCost": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Cost normalised across your own inventory, where 1 is your most expensive model."
+                },
+                "relativeLatency": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Latency normalised across your own inventory, where 1 is your slowest model."
+                },
+                "available": {
+                  "type": "boolean",
+                  "description": "Set false to exclude the model from selection without removing it."
+                }
+              }
+            },
+            "description": "Your model inventory. Supply it to receive a concrete model recommendation; omit it to receive a tier recommendation only."
+          },
+          "currentModelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Model already in use, preferred on ties to avoid pointless switching mid-conversation. Requires availableModels."
+          },
+          "profile": {
+            "type": "string",
+            "enum": [
+              "general",
+              "coding",
+              "legal",
+              "research",
+              "creative",
+              "security",
+              "finance",
+              "medical",
+              "low-cost",
+              "low-latency"
+            ],
+            "description": "Domain profile. A profile may raise a tier or capability floor; it can never lower one. Default: general."
+          },
+          "budget": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Optional ceilings. Switchboard reports whether the routed plan fits; it never silently violates a capability or safety floor to satisfy a budget.",
+            "properties": {
+              "maxRelativeCost": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeCost."
+              },
+              "maxRelativeLatency": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeLatency."
+              },
+              "minQuality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Smallest acceptable normalised quality."
+              },
+              "maxStages": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "description": "Largest acceptable number of execution-plan stages."
+              }
+            }
+          },
+          "planMode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "auto",
+              "multi"
+            ],
+            "description": "\"single\" forces a one-stage plan, \"multi\" forces staged execution, \"auto\" decides from difficulty. Default: auto."
+          },
+          "apiVersion": {
+            "type": "string",
+            "enum": [
+              "2026-07-24"
+            ],
+            "description": "Pin the response contract version. Defaults to the current contract."
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "summary",
+          "route",
+          "requiredCapabilities",
+          "reasons",
+          "confidenceEvidence",
+          "modelResolution",
+          "executionPlan",
+          "budgetAssessment"
+        ],
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "route": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tier",
+              "effort"
+            ],
+            "properties": {
+              "tier": {
+                "type": "string",
+                "enum": [
+                  "fast",
+                  "balanced",
+                  "deep",
+                  "max"
+                ]
+              },
+              "effort": {
+                "type": "string",
+                "enum": [
+                  "low",
+                  "medium",
+                  "high",
+                  "max"
+                ]
+              }
+            }
+          },
+          "requiredCapabilities": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "web",
+                "files",
+                "vision",
+                "longContext",
+                "code"
+              ]
+            }
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidenceEvidence": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "overall",
+              "scoreMargin",
+              "deterministicEvidence",
+              "capabilityCertainty",
+              "agreement"
+            ],
+            "properties": {
+              "overall": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "scoreMargin": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "deterministicEvidence": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "capabilityCertainty": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "agreement": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "modelResolution": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "status",
+              "recommended",
+              "alternatives",
+              "negotiation"
+            ],
+            "properties": {
+              "status": {
+                "type": "string",
+                "enum": [
+                  "not-provided",
+                  "recommended",
+                  "best-effort",
+                  "no-compatible-model"
+                ]
+              },
+              "recommended": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "id",
+                      "tier",
+                      "effort",
+                      "meetsRequirements",
+                      "unknownCapabilities",
+                      "relativeCost",
+                      "relativeLatency",
+                      "score"
+                    ],
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      },
+                      "family": {
+                        "type": "string"
+                      },
+                      "tier": {
+                        "type": "string",
+                        "enum": [
+                          "fast",
+                          "balanced",
+                          "deep",
+                          "max"
+                        ]
+                      },
+                      "effort": {
+                        "type": "string",
+                        "enum": [
+                          "low",
+                          "medium",
+                          "high",
+                          "max"
+                        ]
+                      },
+                      "meetsRequirements": {
+                        "type": "boolean"
+                      },
+                      "unknownCapabilities": {
+                        "type": "array",
+                        "uniqueItems": true,
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "web",
+                            "files",
+                            "vision",
+                            "longContext",
+                            "code"
+                          ]
+                        }
+                      },
+                      "relativeCost": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "relativeLatency": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "score": {
+                        "type": "number"
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "alternatives": {
+                "type": "array",
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "tier",
+                    "effort",
+                    "meetsRequirements",
+                    "unknownCapabilities",
+                    "relativeCost",
+                    "relativeLatency",
+                    "score"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "title": {
+                      "type": "string"
+                    },
+                    "family": {
+                      "type": "string"
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "fast",
+                        "balanced",
+                        "deep",
+                        "max"
+                      ]
+                    },
+                    "effort": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "max"
+                      ]
+                    },
+                    "meetsRequirements": {
+                      "type": "boolean"
+                    },
+                    "unknownCapabilities": {
+                      "type": "array",
+                      "uniqueItems": true,
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "web",
+                          "files",
+                          "vision",
+                          "longContext",
+                          "code"
+                        ]
+                      }
+                    },
+                    "relativeCost": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "relativeLatency": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "score": {
+                      "type": "number"
+                    }
+                  }
+                }
+              },
+              "negotiation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "requiredCapabilities",
+                  "eligibleCount",
+                  "rejected"
+                ],
+                "properties": {
+                  "requiredCapabilities": {
+                    "type": "array",
+                    "uniqueItems": true,
+                    "items": {
+                      "type": "string",
+                      "enum": [
+                        "web",
+                        "files",
+                        "vision",
+                        "longContext",
+                        "code"
+                      ]
+                    }
+                  },
+                  "eligibleCount": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 64
+                  },
+                  "rejected": {
+                    "type": "array",
+                    "maxItems": 64,
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "id",
+                        "reasons"
+                      ],
+                      "properties": {
+                        "id": {
+                          "type": "string"
+                        },
+                        "reasons": {
+                          "type": "array",
+                          "minItems": 1,
+                          "uniqueItems": true,
+                          "items": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "executionPlan": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "mode",
+              "stages"
+            ],
+            "properties": {
+              "mode": {
+                "type": "string",
+                "enum": [
+                  "single",
+                  "multi"
+                ]
+              },
+              "stages": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "purpose",
+                    "tier",
+                    "effort",
+                    "capabilities",
+                    "optional"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "enum": [
+                        "answer",
+                        "analyze",
+                        "refine",
+                        "verify"
+                      ]
+                    },
+                    "purpose": {
+                      "type": "string"
+                    },
+                    "tier": {
+                      "type": "string",
+                      "enum": [
+                        "fast",
+                        "balanced",
+                        "deep",
+                        "max"
+                      ]
+                    },
+                    "effort": {
+                      "type": "string",
+                      "enum": [
+                        "low",
+                        "medium",
+                        "high",
+                        "max"
+                      ]
+                    },
+                    "capabilities": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": [
+                        "web",
+                        "files",
+                        "vision",
+                        "longContext",
+                        "code"
+                      ],
+                      "properties": {
+                        "web": {
+                          "type": "boolean"
+                        },
+                        "files": {
+                          "type": "boolean"
+                        },
+                        "vision": {
+                          "type": "boolean"
+                        },
+                        "longContext": {
+                          "type": "boolean"
+                        },
+                        "code": {
+                          "type": "boolean"
+                        }
+                      }
+                    },
+                    "optional": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "budgetAssessment": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fits",
+              "violations",
+              "modelCompatibility",
+              "estimatedRelativeCost",
+              "estimatedRelativeLatency",
+              "estimatedQuality",
+              "constraints"
+            ],
+            "properties": {
+              "fits": {
+                "type": "boolean"
+              },
+              "violations": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "cost",
+                    "latency",
+                    "quality",
+                    "modelRequirements"
+                  ]
+                }
+              },
+              "modelCompatibility": {
+                "type": "string",
+                "enum": [
+                  "not-evaluated",
+                  "compatible",
+                  "incompatible"
+                ]
+              },
+              "estimatedRelativeCost": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "estimatedRelativeLatency": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "estimatedQuality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              "constraints": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "maxRelativeCost",
+                  "maxRelativeLatency",
+                  "minQuality",
+                  "maxStages"
+                ],
+                "properties": {
+                  "maxRelativeCost": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "maxRelativeLatency": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "minQuality": {
+                    "type": "number",
+                    "minimum": 0,
+                    "maximum": 1
+                  },
+                  "maxStages": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "compare_routes",
+      "title": "Compare Routes",
+      "description": "Compare two to eight policy or profile variants for the same request.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt",
+          "variants"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64000,
+            "pattern": ".*\\S.*",
+            "description": "The request to route. Analysed in-process and never stored, logged, or transmitted."
+          },
+          "context": {
+            "type": "array",
+            "maxItems": 8,
+            "description": "Up to 8 recent conversation turns, oldest first. Used only to interpret short follow-ups such as \"do it again\" whose difficulty is carried by the earlier turn. Capped at 32,000 characters in total.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "role",
+                "text"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "description": "Who produced this turn."
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 12000,
+                  "pattern": ".*\\S.*",
+                  "description": "The turn text."
+                }
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "description": "Metadata describing one attachment. Switchboard never receives file bytes.",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": ".*\\S.*",
+                  "description": "File name, used for type inference only."
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000000,
+                  "description": "File size in bytes."
+                },
+                "detectedType": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "markdown",
+                    "html",
+                    "json",
+                    "csv",
+                    "pdf",
+                    "docx",
+                    "pptx",
+                    "xlsx",
+                    "zip",
+                    "image",
+                    "unknown"
+                  ],
+                  "description": "Host-detected file type."
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "MIME type, for example application/pdf."
+                },
+                "textLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Characters of text the host extracted. Drives the long-context floor."
+                },
+                "excerpt": {
+                  "type": "string",
+                  "maxLength": 4000,
+                  "description": "Short excerpt used for topic signals. Send only what you are willing to share."
+                },
+                "warnings": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "description": "Extraction warnings, for example truncation or a parse failure."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capabilities this attachment requires of the model.",
+                  "properties": {
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The attachment must be interpreted visually."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The attachment needs a large context window."
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Attachment metadata. Any attachment requires a file-capable model and raises the floor to at least balanced."
+          },
+          "availableModels": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "description": "One model the host can actually invoke. Provider-independent by design: Switchboard never assumes a vendor.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": ".*\\S.*",
+                  "description": "Host-side identifier, returned verbatim in the recommendation."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Human-readable name."
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Model family, used only for grouping."
+                },
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ],
+                  "description": "Quality tier this model belongs to."
+                },
+                "effortLevels": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "description": "Reasoning-effort levels this model supports. An empty array means effort is not selectable."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capability flags. Omitted keys mean unknown, which is treated differently from an explicit false.",
+                  "properties": {
+                    "web": {
+                      "type": "boolean",
+                      "description": "The task needs live web access or current sources."
+                    },
+                    "files": {
+                      "type": "boolean",
+                      "description": "The task needs the model to read attached files."
+                    },
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The task needs image understanding."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The task needs a large context window."
+                    },
+                    "code": {
+                      "type": "boolean",
+                      "description": "The task needs code understanding or generation."
+                    }
+                  }
+                },
+                "relativeCost": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Cost normalised across your own inventory, where 1 is your most expensive model."
+                },
+                "relativeLatency": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Latency normalised across your own inventory, where 1 is your slowest model."
+                },
+                "available": {
+                  "type": "boolean",
+                  "description": "Set false to exclude the model from selection without removing it."
+                }
+              }
+            },
+            "description": "Your model inventory. Supply it to receive a concrete model recommendation; omit it to receive a tier recommendation only."
+          },
+          "currentModelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Model already in use, preferred on ties to avoid pointless switching mid-conversation. Requires availableModels."
+          },
+          "budget": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Optional ceilings. Switchboard reports whether the routed plan fits; it never silently violates a capability or safety floor to satisfy a budget.",
+            "properties": {
+              "maxRelativeCost": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeCost."
+              },
+              "maxRelativeLatency": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeLatency."
+              },
+              "minQuality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Smallest acceptable normalised quality."
+              },
+              "maxStages": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "description": "Largest acceptable number of execution-plan stages."
+              }
+            }
+          },
+          "planMode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "auto",
+              "multi"
+            ],
+            "description": "\"single\" forces a one-stage plan, \"multi\" forces staged execution, \"auto\" decides from difficulty. Default: auto."
+          },
+          "variants": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "description": "Between 2 and 8 policy/profile combinations to route the same prompt under, so their outcomes can be compared side by side.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "Name for this variant, echoed in the results."
+                },
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "best",
+                    "balanced",
+                    "fast",
+                    "conserve"
+                  ],
+                  "description": "Cost/quality preference. \"best\" biases upward, \"fast\" and \"conserve\" bias downward, \"balanced\" is neutral. A policy can move a borderline request one tier but can never route beneath a capability or safety floor. Default: balanced."
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "general",
+                    "coding",
+                    "legal",
+                    "research",
+                    "creative",
+                    "security",
+                    "finance",
+                    "medical",
+                    "low-cost",
+                    "low-latency"
+                  ],
+                  "description": "Domain profile. A profile may raise a tier or capability floor; it can never lower one. Default: general."
+                }
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "results",
+          "differences"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label",
+                "profile",
+                "policy",
+                "tier",
+                "effort",
+                "confidence",
+                "modelId",
+                "fitsBudget",
+                "stageCount"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "general",
+                    "coding",
+                    "legal",
+                    "research",
+                    "creative",
+                    "security",
+                    "finance",
+                    "medical",
+                    "low-cost",
+                    "low-latency"
+                  ]
+                },
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "best",
+                    "balanced",
+                    "fast",
+                    "conserve"
+                  ]
+                },
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ]
+                },
+                "effort": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "max"
+                  ]
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "modelId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fitsBudget": {
+                  "type": "boolean"
+                },
+                "stageCount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4
+                }
+              }
+            }
+          },
+          "differences": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tierSpread",
+              "distinctTiers",
+              "distinctModels",
+              "budgetConflicts"
+            ],
+            "properties": {
+              "tierSpread": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "distinctTiers": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ]
+                }
+              },
+              "distinctModels": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "budgetConflicts": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "simulate_policy",
+      "title": "Simulate Policies",
+      "description": "Simulate selected policy or profile variants without changing state.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt",
+          "variants"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64000,
+            "pattern": ".*\\S.*",
+            "description": "The request to route. Analysed in-process and never stored, logged, or transmitted."
+          },
+          "context": {
+            "type": "array",
+            "maxItems": 8,
+            "description": "Up to 8 recent conversation turns, oldest first. Used only to interpret short follow-ups such as \"do it again\" whose difficulty is carried by the earlier turn. Capped at 32,000 characters in total.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "role",
+                "text"
+              ],
+              "properties": {
+                "role": {
+                  "type": "string",
+                  "enum": [
+                    "user",
+                    "assistant"
+                  ],
+                  "description": "Who produced this turn."
+                },
+                "text": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 12000,
+                  "pattern": ".*\\S.*",
+                  "description": "The turn text."
+                }
+              }
+            }
+          },
+          "files": {
+            "type": "array",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "description": "Metadata describing one attachment. Switchboard never receives file bytes.",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "pattern": ".*\\S.*",
+                  "description": "File name, used for type inference only."
+                },
+                "size": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000000,
+                  "description": "File size in bytes."
+                },
+                "detectedType": {
+                  "type": "string",
+                  "enum": [
+                    "text",
+                    "markdown",
+                    "html",
+                    "json",
+                    "csv",
+                    "pdf",
+                    "docx",
+                    "pptx",
+                    "xlsx",
+                    "zip",
+                    "image",
+                    "unknown"
+                  ],
+                  "description": "Host-detected file type."
+                },
+                "mediaType": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "description": "MIME type, for example application/pdf."
+                },
+                "textLength": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1000000,
+                  "description": "Characters of text the host extracted. Drives the long-context floor."
+                },
+                "excerpt": {
+                  "type": "string",
+                  "maxLength": 4000,
+                  "description": "Short excerpt used for topic signals. Send only what you are willing to share."
+                },
+                "warnings": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "string",
+                    "maxLength": 500
+                  },
+                  "description": "Extraction warnings, for example truncation or a parse failure."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capabilities this attachment requires of the model.",
+                  "properties": {
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The attachment must be interpreted visually."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The attachment needs a large context window."
+                    }
+                  }
+                }
+              }
+            },
+            "description": "Attachment metadata. Any attachment requires a file-capable model and raises the floor to at least balanced."
+          },
+          "availableModels": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "description": "One model the host can actually invoke. Provider-independent by design: Switchboard never assumes a vendor.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": ".*\\S.*",
+                  "description": "Host-side identifier, returned verbatim in the recommendation."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Human-readable name."
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Model family, used only for grouping."
+                },
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ],
+                  "description": "Quality tier this model belongs to."
+                },
+                "effortLevels": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "description": "Reasoning-effort levels this model supports. An empty array means effort is not selectable."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capability flags. Omitted keys mean unknown, which is treated differently from an explicit false.",
+                  "properties": {
+                    "web": {
+                      "type": "boolean",
+                      "description": "The task needs live web access or current sources."
+                    },
+                    "files": {
+                      "type": "boolean",
+                      "description": "The task needs the model to read attached files."
+                    },
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The task needs image understanding."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The task needs a large context window."
+                    },
+                    "code": {
+                      "type": "boolean",
+                      "description": "The task needs code understanding or generation."
+                    }
+                  }
+                },
+                "relativeCost": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Cost normalised across your own inventory, where 1 is your most expensive model."
+                },
+                "relativeLatency": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Latency normalised across your own inventory, where 1 is your slowest model."
+                },
+                "available": {
+                  "type": "boolean",
+                  "description": "Set false to exclude the model from selection without removing it."
+                }
+              }
+            },
+            "description": "Your model inventory. Supply it to receive a concrete model recommendation; omit it to receive a tier recommendation only."
+          },
+          "currentModelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Model already in use, preferred on ties to avoid pointless switching mid-conversation. Requires availableModels."
+          },
+          "budget": {
+            "type": "object",
+            "additionalProperties": false,
+            "description": "Optional ceilings. Switchboard reports whether the routed plan fits; it never silently violates a capability or safety floor to satisfy a budget.",
+            "properties": {
+              "maxRelativeCost": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeCost."
+              },
+              "maxRelativeLatency": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Largest acceptable relativeLatency."
+              },
+              "minQuality": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1,
+                "description": "Smallest acceptable normalised quality."
+              },
+              "maxStages": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4,
+                "description": "Largest acceptable number of execution-plan stages."
+              }
+            }
+          },
+          "planMode": {
+            "type": "string",
+            "enum": [
+              "single",
+              "auto",
+              "multi"
+            ],
+            "description": "\"single\" forces a one-stage plan, \"multi\" forces staged execution, \"auto\" decides from difficulty. Default: auto."
+          },
+          "variants": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "description": "Between 2 and 8 policy/profile combinations to route the same prompt under, so their outcomes can be compared side by side.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 80,
+                  "description": "Name for this variant, echoed in the results."
+                },
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "best",
+                    "balanced",
+                    "fast",
+                    "conserve"
+                  ],
+                  "description": "Cost/quality preference. \"best\" biases upward, \"fast\" and \"conserve\" bias downward, \"balanced\" is neutral. A policy can move a borderline request one tier but can never route beneath a capability or safety floor. Default: balanced."
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "general",
+                    "coding",
+                    "legal",
+                    "research",
+                    "creative",
+                    "security",
+                    "finance",
+                    "medical",
+                    "low-cost",
+                    "low-latency"
+                  ],
+                  "description": "Domain profile. A profile may raise a tier or capability floor; it can never lower one. Default: general."
+                }
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "results",
+          "differences"
+        ],
+        "properties": {
+          "results": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 8,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "label",
+                "profile",
+                "policy",
+                "tier",
+                "effort",
+                "confidence",
+                "modelId",
+                "fitsBudget",
+                "stageCount"
+              ],
+              "properties": {
+                "label": {
+                  "type": "string"
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "general",
+                    "coding",
+                    "legal",
+                    "research",
+                    "creative",
+                    "security",
+                    "finance",
+                    "medical",
+                    "low-cost",
+                    "low-latency"
+                  ]
+                },
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "best",
+                    "balanced",
+                    "fast",
+                    "conserve"
+                  ]
+                },
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ]
+                },
+                "effort": {
+                  "type": "string",
+                  "enum": [
+                    "low",
+                    "medium",
+                    "high",
+                    "max"
+                  ]
+                },
+                "confidence": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "modelId": {
+                  "anyOf": [
+                    {
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ]
+                },
+                "fitsBudget": {
+                  "type": "boolean"
+                },
+                "stageCount": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4
+                }
+              }
+            }
+          },
+          "differences": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "tierSpread",
+              "distinctTiers",
+              "distinctModels",
+              "budgetConflicts"
+            ],
+            "properties": {
+              "tierSpread": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 3
+              },
+              "distinctTiers": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ]
+                }
+              },
+              "distinctModels": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "budgetConflicts": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "validate_model_inventory",
+      "title": "Validate Model Inventory",
+      "description": "Validate and summarize a provider-independent model inventory without routing a prompt.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "availableModels"
+        ],
+        "properties": {
+          "availableModels": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id"
+              ],
+              "description": "One model the host can actually invoke. Provider-independent by design: Switchboard never assumes a vendor.",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200,
+                  "pattern": ".*\\S.*",
+                  "description": "Host-side identifier, returned verbatim in the recommendation."
+                },
+                "title": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Human-readable name."
+                },
+                "family": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Model family, used only for grouping."
+                },
+                "tier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ],
+                  "description": "Quality tier this model belongs to."
+                },
+                "effortLevels": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "low",
+                      "medium",
+                      "high",
+                      "max"
+                    ]
+                  },
+                  "description": "Reasoning-effort levels this model supports. An empty array means effort is not selectable."
+                },
+                "capabilities": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "description": "Capability flags. Omitted keys mean unknown, which is treated differently from an explicit false.",
+                  "properties": {
+                    "web": {
+                      "type": "boolean",
+                      "description": "The task needs live web access or current sources."
+                    },
+                    "files": {
+                      "type": "boolean",
+                      "description": "The task needs the model to read attached files."
+                    },
+                    "vision": {
+                      "type": "boolean",
+                      "description": "The task needs image understanding."
+                    },
+                    "longContext": {
+                      "type": "boolean",
+                      "description": "The task needs a large context window."
+                    },
+                    "code": {
+                      "type": "boolean",
+                      "description": "The task needs code understanding or generation."
+                    }
+                  }
+                },
+                "relativeCost": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Cost normalised across your own inventory, where 1 is your most expensive model."
+                },
+                "relativeLatency": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1,
+                  "description": "Latency normalised across your own inventory, where 1 is your slowest model."
+                },
+                "available": {
+                  "type": "boolean",
+                  "description": "Set false to exclude the model from selection without removing it."
+                }
+              }
+            },
+            "description": "Inventory to validate. Reports structural problems and coverage gaps without routing anything."
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "valid",
+          "modelCount",
+          "availableCount",
+          "tiers",
+          "capabilityCoverage",
+          "unavailable",
+          "unknownCapabilityModels",
+          "warnings"
+        ],
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "const": true
+          },
+          "modelCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 64
+          },
+          "availableCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 64
+          },
+          "tiers": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fast",
+              "balanced",
+              "deep",
+              "max"
+            ],
+            "properties": {
+              "fast": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "balanced": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "deep": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "max": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              }
+            }
+          },
+          "capabilityCoverage": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "web",
+              "files",
+              "vision",
+              "longContext",
+              "code"
+            ],
+            "properties": {
+              "web": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "files": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "vision": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "longContext": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              },
+              "code": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 64
+              }
+            }
+          },
+          "unavailable": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "unknownCapabilityModels": {
+            "type": "array",
+            "maxItems": 64,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "capabilities"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "capabilities": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "web",
+                      "files",
+                      "vision",
+                      "longContext",
+                      "code"
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "warnings": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "evaluate_router",
+      "title": "Evaluate Router",
+      "description": "Evaluate up to 100 labeled routing cases and return safety and quality metrics. Baseline metrics exclude learned preferences by default.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "cases"
+        ],
+        "properties": {
+          "includePreferences": {
+            "type": "boolean",
+            "default": false,
+            "description": "When true, also report the observed preference-adjusted tier while baseline metrics remain preference independent."
+          },
+          "cases": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Between 1 and 100 labelled cases. Reports accuracy, under-routing, over-routing, capability recall and a confusion matrix.",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "prompt",
+                "expectedTier"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Identifier echoed back so failures can be traced to a case."
+                },
+                "prompt": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64000,
+                  "pattern": ".*\\S.*",
+                  "description": "The request to route. Analysed in-process and never stored, logged, or transmitted."
+                },
+                "context": {
+                  "type": "array",
+                  "maxItems": 8,
+                  "description": "Up to 8 recent conversation turns, oldest first. Used only to interpret short follow-ups such as \"do it again\" whose difficulty is carried by the earlier turn. Capped at 32,000 characters in total.",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "role",
+                      "text"
+                    ],
+                    "properties": {
+                      "role": {
+                        "type": "string",
+                        "enum": [
+                          "user",
+                          "assistant"
+                        ],
+                        "description": "Who produced this turn."
+                      },
+                      "text": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 12000,
+                        "pattern": ".*\\S.*",
+                        "description": "The turn text."
+                      }
+                    }
+                  }
+                },
+                "files": {
+                  "type": "array",
+                  "maxItems": 20,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name"
+                    ],
+                    "description": "Metadata describing one attachment. Switchboard never receives file bytes.",
+                    "properties": {
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 512,
+                        "pattern": ".*\\S.*",
+                        "description": "File name, used for type inference only."
+                      },
+                      "size": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000000,
+                        "description": "File size in bytes."
+                      },
+                      "detectedType": {
+                        "type": "string",
+                        "enum": [
+                          "text",
+                          "markdown",
+                          "html",
+                          "json",
+                          "csv",
+                          "pdf",
+                          "docx",
+                          "pptx",
+                          "xlsx",
+                          "zip",
+                          "image",
+                          "unknown"
+                        ],
+                        "description": "Host-detected file type."
+                      },
+                      "mediaType": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 200,
+                        "description": "MIME type, for example application/pdf."
+                      },
+                      "textLength": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 1000000,
+                        "description": "Characters of text the host extracted. Drives the long-context floor."
+                      },
+                      "excerpt": {
+                        "type": "string",
+                        "maxLength": 4000,
+                        "description": "Short excerpt used for topic signals. Send only what you are willing to share."
+                      },
+                      "warnings": {
+                        "type": "array",
+                        "maxItems": 20,
+                        "items": {
+                          "type": "string",
+                          "maxLength": 500
+                        },
+                        "description": "Extraction warnings, for example truncation or a parse failure."
+                      },
+                      "capabilities": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "description": "Capabilities this attachment requires of the model.",
+                        "properties": {
+                          "vision": {
+                            "type": "boolean",
+                            "description": "The attachment must be interpreted visually."
+                          },
+                          "longContext": {
+                            "type": "boolean",
+                            "description": "The attachment needs a large context window."
+                          }
+                        }
+                      }
+                    }
+                  },
+                  "description": "Attachment metadata. Any attachment requires a file-capable model and raises the floor to at least balanced."
+                },
+                "policy": {
+                  "type": "string",
+                  "enum": [
+                    "best",
+                    "balanced",
+                    "fast",
+                    "conserve"
+                  ],
+                  "description": "Cost/quality preference. \"best\" biases upward, \"fast\" and \"conserve\" bias downward, \"balanced\" is neutral. A policy can move a borderline request one tier but can never route beneath a capability or safety floor. Default: balanced."
+                },
+                "profile": {
+                  "type": "string",
+                  "enum": [
+                    "general",
+                    "coding",
+                    "legal",
+                    "research",
+                    "creative",
+                    "security",
+                    "finance",
+                    "medical",
+                    "low-cost",
+                    "low-latency"
+                  ],
+                  "description": "Domain profile. A profile may raise a tier or capability floor; it can never lower one. Default: general."
+                },
+                "expectedTier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ],
+                  "description": "The tier this case should route to."
+                },
+                "requiredCapabilities": {
+                  "type": "array",
+                  "maxItems": 5,
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "web",
+                      "files",
+                      "vision",
+                      "longContext",
+                      "code"
+                    ]
+                  },
+                  "description": "Capabilities the routing decision must detect for this case."
+                }
+              }
+            }
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "caseCount",
+          "evaluationMode",
+          "preferenceAdjustedCases",
+          "exactTierAccuracy",
+          "harmfulUnderRouting",
+          "overRouting",
+          "capabilityRecall",
+          "confusionMatrix",
+          "cases",
+          "capabilityKeys"
+        ],
+        "properties": {
+          "caseCount": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "evaluationMode": {
+            "type": "string",
+            "const": "baseline-with-preference-observation"
+          },
+          "preferenceAdjustedCases": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "exactTierAccuracy": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "harmfulUnderRouting": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "count",
+              "rate"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rate": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "overRouting": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "count",
+              "rate"
+            ],
+            "properties": {
+              "count": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rate": {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              }
+            }
+          },
+          "capabilityRecall": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "confusionMatrix": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "fast",
+              "balanced",
+              "deep",
+              "max"
+            ],
+            "properties": {
+              "fast": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fast",
+                  "balanced",
+                  "deep",
+                  "max"
+                ],
+                "properties": {
+                  "fast": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "balanced": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "deep": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "max": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "balanced": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fast",
+                  "balanced",
+                  "deep",
+                  "max"
+                ],
+                "properties": {
+                  "fast": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "balanced": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "deep": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "max": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "deep": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fast",
+                  "balanced",
+                  "deep",
+                  "max"
+                ],
+                "properties": {
+                  "fast": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "balanced": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "deep": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "max": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "max": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "fast",
+                  "balanced",
+                  "deep",
+                  "max"
+                ],
+                "properties": {
+                  "fast": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "balanced": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "deep": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "max": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          },
+          "cases": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "expectedTier",
+                "actualTier",
+                "observedTier",
+                "preferenceAdjusted",
+                "learningApplied",
+                "tierDelta",
+                "missingCapabilities",
+                "passed"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "expectedTier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ]
+                },
+                "actualTier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ]
+                },
+                "observedTier": {
+                  "type": "string",
+                  "enum": [
+                    "fast",
+                    "balanced",
+                    "deep",
+                    "max"
+                  ]
+                },
+                "preferenceAdjusted": {
+                  "type": "boolean"
+                },
+                "learningApplied": {
+                  "type": "boolean"
+                },
+                "tierDelta": {
+                  "type": "integer",
+                  "minimum": -3,
+                  "maximum": 3
+                },
+                "missingCapabilities": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": {
+                    "type": "string",
+                    "enum": [
+                      "web",
+                      "files",
+                      "vision",
+                      "longContext",
+                      "code"
+                    ]
+                  }
+                },
+                "passed": {
+                  "type": "boolean"
+                }
+              }
+            }
+          },
+          "capabilityKeys": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "enum": [
+                "web",
+                "files",
+                "vision",
+                "longContext",
+                "code"
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "record_override",
+      "title": "Record Aggregate Override",
+      "description": "Record category-level upgrade or downgrade feedback. Does not accept or store prompt text.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "categories",
+          "recommendedTier",
+          "selectedTier"
+        ],
+        "properties": {
+          "categories": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "description": "Task categories the corrected decision applies to, taken verbatim from taskCategories in the route_request response — for example \"code\", \"high-stakes\", \"reasoning\", \"research\". Category names only: this tool rejects prompt text, file data, model identifiers, notes, and any field not listed here.",
+            "items": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,39}$",
+              "description": "A lowercase category name of at most 40 characters."
+            }
+          },
+          "recommendedTier": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "balanced",
+              "deep",
+              "max"
+            ],
+            "description": "The tier Switchboard recommended."
+          },
+          "selectedTier": {
+            "type": "string",
+            "enum": [
+              "fast",
+              "balanced",
+              "deep",
+              "max"
+            ],
+            "description": "The tier actually used. Higher than recommendedTier records an upgrade, lower records a downgrade. Learned downgrades can never route beneath a capability or safety floor."
+          }
+        }
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "persistent",
+          "updatedAt",
+          "totalOverrides",
+          "categories"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "persistent": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "totalOverrides": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "categories": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "bias",
+                "overrides",
+                "upgrades",
+                "downgrades"
+              ],
+              "properties": {
+                "bias": {
+                  "type": "number",
+                  "minimum": -0.35,
+                  "maximum": 0.35
+                },
+                "overrides": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "upgrades": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "downgrades": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "get_preference_state",
+      "title": "Get Aggregate Preference State",
+      "description": "Read category-level aggregate preference weights and counters.",
+      "annotations": {
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "persistent",
+          "updatedAt",
+          "totalOverrides",
+          "categories"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "persistent": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "totalOverrides": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "categories": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "bias",
+                "overrides",
+                "upgrades",
+                "downgrades"
+              ],
+              "properties": {
+                "bias": {
+                  "type": "number",
+                  "minimum": -0.35,
+                  "maximum": 0.35
+                },
+                "overrides": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "upgrades": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "downgrades": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "reset_preference_state",
+      "title": "Reset Aggregate Preference State",
+      "description": "Delete all aggregate preference weights and counters.",
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "inputSchema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+      },
+      "outputSchema": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "version",
+          "persistent",
+          "updatedAt",
+          "totalOverrides",
+          "categories"
+        ],
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1
+          },
+          "persistent": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "totalOverrides": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "categories": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "bias",
+                "overrides",
+                "upgrades",
+                "downgrades"
+              ],
+              "properties": {
+                "bias": {
+                  "type": "number",
+                  "minimum": -0.35,
+                  "maximum": 0.35
+                },
+                "overrides": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "upgrades": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "downgrades": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

@@ -207,9 +207,20 @@ export const OVERRIDE_INPUT_SCHEMA = {
       minItems: 1,
       maxItems: 16,
       uniqueItems: true,
-      items: { type: 'string', pattern: '^[a-z0-9][a-z0-9_-]{0,39}$' },
+      description:
+        'Task categories the corrected decision applies to, taken verbatim from taskCategories in the route_request response — for example "code", "high-stakes", "reasoning", "research". Category names only: this tool rejects prompt text, file data, model identifiers, notes, and any field not listed here.',
+      items: {
+        type: 'string',
+        pattern: '^[a-z0-9][a-z0-9_-]{0,39}$',
+        description: 'A lowercase category name of at most 40 characters.',
+      },
     },
-    recommendedTier: { type: 'string', enum: TIERS },
-    selectedTier: { type: 'string', enum: TIERS },
+    recommendedTier: { type: 'string', enum: TIERS, description: 'The tier Switchboard recommended.' },
+    selectedTier: {
+      type: 'string',
+      enum: TIERS,
+      description:
+        'The tier actually used. Higher than recommendedTier records an upgrade, lower records a downgrade. Learned downgrades can never route beneath a capability or safety floor.',
+    },
   },
 };
