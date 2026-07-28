@@ -1,6 +1,6 @@
-import { CAPABILITIES, EFFORTS, TIERS } from './schema.mjs';
-import { PROFILE_NAMES } from './profiles.mjs';
 import { ROUTE_OUTPUT_SCHEMA_V05 } from './output-schema.mjs';
+import { PROFILE_NAMES } from './profiles.mjs';
+import { CAPABILITIES, EFFORTS, TIERS } from './schema.mjs';
 
 const JSON_SCHEMA = 'https://json-schema.org/draft/2020-12/schema';
 const stringArray = { type: 'array', items: { type: 'string' } };
@@ -16,7 +16,16 @@ export const EXPLAIN_OUTPUT_SCHEMA = {
   $schema: JSON_SCHEMA,
   type: 'object',
   additionalProperties: false,
-  required: ['summary', 'route', 'requiredCapabilities', 'reasons', 'confidenceEvidence', 'modelResolution', 'executionPlan', 'budgetAssessment'],
+  required: [
+    'summary',
+    'route',
+    'requiredCapabilities',
+    'reasons',
+    'confidenceEvidence',
+    'modelResolution',
+    'executionPlan',
+    'budgetAssessment',
+  ],
   properties: {
     summary: { type: 'string' },
     route: {
@@ -82,18 +91,25 @@ export const INVENTORY_OUTPUT_SCHEMA = {
     modelCount: { type: 'integer', minimum: 0, maximum: 64 },
     availableCount: { type: 'integer', minimum: 0, maximum: 64 },
     tiers: {
-      type: 'object', additionalProperties: false, required: TIERS,
+      type: 'object',
+      additionalProperties: false,
+      required: TIERS,
       properties: Object.fromEntries(TIERS.map((tier) => [tier, { type: 'integer', minimum: 0, maximum: 64 }])),
     },
     capabilityCoverage: {
-      type: 'object', additionalProperties: false, required: CAPABILITIES,
+      type: 'object',
+      additionalProperties: false,
+      required: CAPABILITIES,
       properties: Object.fromEntries(CAPABILITIES.map((capability) => [capability, { type: 'integer', minimum: 0, maximum: 64 }])),
     },
     unavailable: { type: 'array', uniqueItems: true, items: { type: 'string' } },
     unknownCapabilityModels: {
-      type: 'array', maxItems: 64,
+      type: 'array',
+      maxItems: 64,
       items: {
-        type: 'object', additionalProperties: false, required: ['id', 'capabilities'],
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'capabilities'],
         properties: {
           id: { type: 'string' },
           capabilities: { type: 'array', uniqueItems: true, items: { type: 'string', enum: CAPABILITIES } },
@@ -105,12 +121,16 @@ export const INVENTORY_OUTPUT_SCHEMA = {
 };
 
 const countRateSchema = {
-  type: 'object', additionalProperties: false, required: ['count', 'rate'],
+  type: 'object',
+  additionalProperties: false,
+  required: ['count', 'rate'],
   properties: { count: { type: 'integer', minimum: 0 }, rate: { type: 'number', minimum: 0, maximum: 1 } },
 };
 
 const confusionRowSchema = {
-  type: 'object', additionalProperties: false, required: TIERS,
+  type: 'object',
+  additionalProperties: false,
+  required: TIERS,
   properties: Object.fromEntries(TIERS.map((tier) => [tier, { type: 'integer', minimum: 0 }])),
 };
 
@@ -118,7 +138,18 @@ export const EVALUATION_OUTPUT_SCHEMA = {
   $schema: JSON_SCHEMA,
   type: 'object',
   additionalProperties: false,
-  required: ['caseCount', 'evaluationMode', 'preferenceAdjustedCases', 'exactTierAccuracy', 'harmfulUnderRouting', 'overRouting', 'capabilityRecall', 'confusionMatrix', 'cases', 'capabilityKeys'],
+  required: [
+    'caseCount',
+    'evaluationMode',
+    'preferenceAdjustedCases',
+    'exactTierAccuracy',
+    'harmfulUnderRouting',
+    'overRouting',
+    'capabilityRecall',
+    'confusionMatrix',
+    'cases',
+    'capabilityKeys',
+  ],
   properties: {
     caseCount: { type: 'integer', minimum: 1, maximum: 100 },
     evaluationMode: { type: 'string', const: 'baseline-with-preference-observation' },
@@ -128,17 +159,37 @@ export const EVALUATION_OUTPUT_SCHEMA = {
     overRouting: countRateSchema,
     capabilityRecall: { type: 'number', minimum: 0, maximum: 1 },
     confusionMatrix: {
-      type: 'object', additionalProperties: false, required: TIERS,
+      type: 'object',
+      additionalProperties: false,
+      required: TIERS,
       properties: Object.fromEntries(TIERS.map((tier) => [tier, confusionRowSchema])),
     },
     cases: {
-      type: 'array', minItems: 1, maxItems: 100,
+      type: 'array',
+      minItems: 1,
+      maxItems: 100,
       items: {
-        type: 'object', additionalProperties: false,
-        required: ['id', 'expectedTier', 'actualTier', 'observedTier', 'preferenceAdjusted', 'learningApplied', 'tierDelta', 'missingCapabilities', 'passed'],
+        type: 'object',
+        additionalProperties: false,
+        required: [
+          'id',
+          'expectedTier',
+          'actualTier',
+          'observedTier',
+          'preferenceAdjusted',
+          'learningApplied',
+          'tierDelta',
+          'missingCapabilities',
+          'passed',
+        ],
         properties: {
-          id: { type: 'string' }, expectedTier: tierSchema, actualTier: tierSchema, observedTier: tierSchema,
-          preferenceAdjusted: { type: 'boolean' }, learningApplied: { type: 'boolean' }, tierDelta: { type: 'integer', minimum: -3, maximum: 3 },
+          id: { type: 'string' },
+          expectedTier: tierSchema,
+          actualTier: tierSchema,
+          observedTier: tierSchema,
+          preferenceAdjusted: { type: 'boolean' },
+          learningApplied: { type: 'boolean' },
+          tierDelta: { type: 'integer', minimum: -3, maximum: 3 },
           missingCapabilities: { type: 'array', uniqueItems: true, items: { type: 'string', enum: CAPABILITIES } },
           passed: { type: 'boolean' },
         },
@@ -149,16 +200,21 @@ export const EVALUATION_OUTPUT_SCHEMA = {
 };
 
 const preferenceCategorySchema = {
-  type: 'object', additionalProperties: false, required: ['bias', 'overrides', 'upgrades', 'downgrades'],
+  type: 'object',
+  additionalProperties: false,
+  required: ['bias', 'overrides', 'upgrades', 'downgrades'],
   properties: {
     bias: { type: 'number', minimum: -0.35, maximum: 0.35 },
-    overrides: { type: 'integer', minimum: 0 }, upgrades: { type: 'integer', minimum: 0 }, downgrades: { type: 'integer', minimum: 0 },
+    overrides: { type: 'integer', minimum: 0 },
+    upgrades: { type: 'integer', minimum: 0 },
+    downgrades: { type: 'integer', minimum: 0 },
   },
 };
 
 export const PREFERENCE_STATE_OUTPUT_SCHEMA = {
   $schema: JSON_SCHEMA,
-  type: 'object', additionalProperties: false,
+  type: 'object',
+  additionalProperties: false,
   required: ['version', 'persistent', 'updatedAt', 'totalOverrides', 'categories'],
   properties: {
     version: { type: 'integer', const: 1 },

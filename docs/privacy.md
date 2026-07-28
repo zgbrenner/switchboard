@@ -5,7 +5,7 @@ Switchboard is designed to make routing decisions locally without creating a sec
 This document covers both current interfaces:
 
 1. The MCP server, which is the primary product surface.
-2. The retained Chromium extension foundation.
+2. Optional on-disk aggregate preference state, when explicitly enabled.
 
 ## MCP data processed
 
@@ -72,41 +72,6 @@ Optional bearer authentication uses timing-safe token comparison. Switchboard re
 
 Bearer authentication is not a substitute for network segmentation, TLS termination, Host allowlisting, or Origin allowlisting when the server is intentionally exposed beyond the local machine.
 
-## Browser-extension data processed
-
-The retained extension foundation may temporarily process:
-
-- The current unsent draft
-- Bounded recent conversation turns
-- User-selected attachment bytes and bounded extracted text
-- Visible model-picker labels
-
-This processing occurs in extension-owned browser contexts. Temporary prompt and file content is released after routing and is not written to extension storage.
-
-## Browser-extension data persisted
-
-The extension foundation stores only:
-
-- Extension settings
-- Bounded numeric category adjustments derived from overrides
-- Aggregate counters and adapter-health metadata where implemented
-- Local model-pack metadata and integrity information where installed
-
-It must not persist prompt text, file excerpts, assistant responses, page content, URL paths, or browsing history.
-
-## Browser-extension permissions
-
-The extension foundation is intentionally limited to:
-
-- `storage`
-- Extension-owned offscreen processing where configured
-- `https://chatgpt.com/*`
-- `https://claude.ai/*`
-
-It should not request tabs, history, cookies, identity, downloads, clipboard, native messaging, or broad web access unless a future feature has a documented and separately reviewed requirement.
-
-MCP stdio itself requires no browser host permissions. MCP HTTP opens only the configured local listening socket.
-
 ## Threats and controls
 
 | Threat | Control |
@@ -120,11 +85,8 @@ MCP stdio itself requires no browser host permissions. MCP HTTP opens only the c
 | Unauthorized HTTP use | Optional bearer authentication; mandatory for non-loopback binding |
 | Stolen or abandoned session | Random IDs, protocol binding, inactivity expiry, bounded sessions, and explicit deletion |
 | Timing leakage during token comparison | Equal-length timing-safe comparison |
-| Malicious archive in extension path | Central-directory bounds, ratio limits, path checks, entry limits, and metadata-only fallback |
-| Misleading extension or MIME type | Extension, declared MIME, magic-byte, and package-structure checks |
 | Supply-chain model replacement | Immutable revisions, exact byte lengths, and per-asset SHA-256 verification |
 | Provider interface change | Visible post-selection verification and safe fallback without blocking send |
-| Silent browser model change | Visible extension status and manual control |
 | Excessive persisted context | Derived bounded metadata only and erase-all controls |
 | Remote-code policy violation | Executable assets packaged and reviewed; remote model loading disabled |
 
@@ -134,11 +96,10 @@ MCP stdio itself requires no browser host permissions. MCP HTTP opens only the c
 - A host can ignore or misapply the returned recommendation.
 - Inaccurate host-supplied model capabilities can produce an inaccurate model ranking.
 - Bearer tokens protect access but do not encrypt HTTP traffic. Use a trusted local connection or appropriate TLS termination when traffic leaves loopback.
-- The retained extension executes on third-party sites whose interface and scripts can change.
 - Privacy guarantees apply to Switchboard's implementation, not to the AI provider or MCP client that receives the original request.
 
 ## Data deletion
 
 The MCP server has no routing-content database to clear. Terminating the process or deleting an HTTP session removes its in-memory protocol state.
 
-The extension foundation includes local data-deletion controls for its settings, derived preferences, counters, and adapter metadata.
+Aggregate preference state is deleted by calling `reset_preference_state`, or by removing the file at `SWITCHBOARD_MCP_STATE_PATH`. When that variable is unset, state lives only in memory for the life of the session.

@@ -15,7 +15,9 @@ export function explainDecision(decision) {
     required.length ? `Required capabilities: ${required.join(', ')}.` : 'No special host capabilities are required.',
     recommended ? `Recommended model: ${recommended.title ?? recommended.id}.` : 'No concrete model recommendation was produced.',
     `Confidence: ${Math.round((decision.confidence ?? 0) * 100)}%.`,
-    decision.budgetAssessment?.fits === false ? `Budget conflicts: ${decision.budgetAssessment.violations.join(', ')}.` : 'The recommendation fits the supplied budget.',
+    decision.budgetAssessment?.fits === false
+      ? `Budget conflicts: ${decision.budgetAssessment.violations.join(', ')}.`
+      : 'The recommendation fits the supplied budget.',
   ];
   return {
     summary: summary.join(' '),
@@ -74,7 +76,8 @@ export function validateModelInventory(models) {
   if (!models.length) warnings.push('The inventory is empty.');
   if (!models.some((model) => model.available)) warnings.push('No model is marked available.');
   for (const key of CAPABILITIES) if (capabilityCoverage[key] === 0) warnings.push(`No model confirms support for ${key}.`);
-  if (unknownCapabilityModels.length) warnings.push('Some models omit capability declarations; omissions are treated as unknown rather than supported.');
+  if (unknownCapabilityModels.length)
+    warnings.push('Some models omit capability declarations; omissions are treated as unknown rather than supported.');
 
   return {
     valid: true,

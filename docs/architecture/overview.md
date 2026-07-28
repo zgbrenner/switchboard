@@ -1,11 +1,8 @@
 # Switchboard architecture
 
-Switchboard has one shared routing engine and two interfaces:
+Switchboard is a local MCP server wrapping a shared routing engine.
 
-1. **The MCP server**, which is the primary current product surface.
-2. **The retained Chromium extension foundation**, which can apply the same abstract routing concepts to visible ChatGPT and Claude controls.
-
-The MCP server works independently of the extension and does not require browser permissions or packaged neural models.
+The server has no runtime dependencies and requires no model download, network egress, or credentials.
 
 ## Shared routing contract
 
@@ -119,17 +116,6 @@ When a host supplies `availableModels`, each entry can contain:
 - Availability
 
 Confirmed capability incompatibility is a hard exclusion. Unknown support receives a penalty rather than an automatic exclusion. Models below the required tier receive a much larger penalty than conservative over-routing. An adequate current model can receive a continuity preference when context is present.
-
-## Browser-extension boundary
-
-The repository retains a Manifest V3 extension foundation with:
-
-1. A content module that can read an unsent draft, bounded recent context, user-selected files, and visible model controls.
-2. A service worker that stores extension settings and bounded derived preferences.
-3. Popup and options pages for extension controls and deletion.
-4. Provider adapters that map abstract tiers onto visible ChatGPT or Claude choices and verify the selected control.
-
-This path is secondary to the MCP server. Its site automation can break when provider interfaces change, so it must fail open and preserve the user's prompt.
 
 ## Optional neural routing
 

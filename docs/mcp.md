@@ -1,6 +1,6 @@
 # Switchboard MCP 0.5 reference
 
-**Version:** 0.5.0  
+**Version:** 0.6.0  
 **Switchboard API contract:** `2026-07-24`  
 **MCP revision:** `2025-11-25`  
 **Compatible revisions:** `2025-06-18`, `2025-03-26`

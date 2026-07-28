@@ -34,20 +34,18 @@ Confirmed capability mismatches are hard exclusions. Unknown capability support 
 
 ## Local inference research
 
-- **Transformers.js and ONNX Runtime Web:** packaged local inference through ONNX, WebGPU, and WASM for the extension foundation.
 - **Ettin encoder and reranker families:** compact task-specific Scout and Arbiter candidates.
 - **MiniLM encoder and cross-encoder families:** bootstrap semantic and ranking candidates.
 - **SmolLM2-135M-Instruct:** optional small generative adjudicator candidate.
 
-Neural stages are roadmap work for MCP and optional extension work. Switchboard MCP does not require model downloads.
+Neural scoring remains future work. Switchboard runs with no runtime dependencies and requires no model download.
 
 ## File handling research
 
 - **Microsoft MarkItDown:** document-conversion architecture and format-specific adapters.
-- **PDF.js:** a potential packaged path for broader browser PDF coverage.
 - **Archive parser hardening:** central-directory inspection, path traversal controls, decompression limits, and metadata-only fallback.
 
-The MCP server itself accepts only bounded host-supplied file summaries. Browser file conversion remains a separate extension subsystem.
+The MCP server accepts only bounded host-supplied file summaries: name, type, size, text length, and a short excerpt. It never receives or opens file bytes.
 
 ## Future deterministic signals
 

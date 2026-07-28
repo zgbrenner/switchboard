@@ -30,7 +30,16 @@ function publicState(state, persistent) {
 }
 
 function validateState(value) {
-  if (!value || typeof value !== 'object' || Array.isArray(value) || value.version !== 1 || !value.categories || typeof value.categories !== 'object' || Array.isArray(value.categories)) return emptyState();
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    value.version !== 1 ||
+    !value.categories ||
+    typeof value.categories !== 'object' ||
+    Array.isArray(value.categories)
+  )
+    return emptyState();
   const state = emptyState();
   state.updatedAt = typeof value.updatedAt === 'string' ? value.updatedAt : null;
   state.totalOverrides = Number.isInteger(value.totalOverrides) && value.totalOverrides >= 0 ? value.totalOverrides : 0;
@@ -100,7 +109,7 @@ export class AggregatePreferenceStore {
       const direction = Math.sign(delta);
       for (const category of categories) {
         const current = this.state.categories[category] ?? { bias: 0, overrides: 0, upgrades: 0, downgrades: 0 };
-        current.bias = Math.round(clamp((current.bias * 0.9) + (direction * 0.1), -0.35, 0.35) * 1000) / 1000;
+        current.bias = Math.round(clamp(current.bias * 0.9 + direction * 0.1, -0.35, 0.35) * 1000) / 1000;
         current.overrides += 1;
         if (direction > 0) current.upgrades += 1;
         else current.downgrades += 1;
@@ -141,13 +150,17 @@ export class AggregatePreferenceStore {
     const direction = Math.sign(bias);
     const hardCapability = Object.values(decision.capabilities ?? {}).some(Boolean);
     const highStakes = categories.some((category) => HIGH_STAKES.has(category));
-    if (direction < 0 && (hardCapability || highStakes)) return { decision, learning: { applied: false, bias, reason: 'downward-safety-floor' } };
+    if (direction < 0 && (hardCapability || highStakes))
+      return { decision, learning: { applied: false, bias, reason: 'downward-safety-floor' } };
     const current = tierIndex(decision.tier);
     const next = clamp(current + direction, 0, TIERS.length - 1);
     if (next === current) return { decision, learning: { applied: false, bias, reason: 'tier-boundary' } };
     const tier = TIERS[next];
     const effort = tier === 'max' ? 'max' : tier === 'deep' ? 'high' : tier === 'balanced' ? 'medium' : 'low';
-    return { decision: { ...decision, tier, effort }, learning: { applied: true, bias: Math.round(bias * 1000) / 1000, fromTier: decision.tier, toTier: tier } };
+    return {
+      decision: { ...decision, tier, effort },
+      learning: { applied: true, bias: Math.round(bias * 1000) / 1000, fromTier: decision.tier, toTier: tier },
+    };
   }
 }
 
@@ -166,21 +179,48 @@ function object(value, label) {
 export function normalizeOverrideArguments(value) {
   const args = object(value ?? {}, 'record_override arguments');
   const allowed = new Set(['categories', 'recommendedTier', 'selectedTier']);
-  for (const key of Object.keys(args)) if (!allowed.has(key)) throw new Error(`record_override arguments contains an unsupported property: ${key}.`);
-  if (!Array.isArray(args.categories) || args.categories.length < 1 || args.categories.length > 16) throw new Error('categories must contain between 1 and 16 entries.');
-  const categories = [...new Set(args.categories.map((category, index) => {
-    if (typeof category !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,39}$/u.test(category)) throw new Error(`categories[${index}] is invalid.`);
-    return category;
-  }))];
-  if (!TIERS.includes(args.recommendedTier) || !TIERS.includes(args.selectedTier)) throw new Error('recommendedTier and selectedTier must be fast, balanced, deep, or max.');
+  for (const key of Object.keys(args))
+    if (!allowed.has(key)) throw new Error(`record_override arguments contains an unsupported property: ${key}.`);
+  if (!Array.isArray(args.categories) || args.categories.length < 1 || args.categories.length > 16)
+    throw new Error('categories must contain between 1 and 16 entries.');
+  const categories = [
+    ...new Set(
+      args.categories.map((category, index) => {
+        if (typeof category !== 'string' || !/^[a-z0-9][a-z0-9_-]{0,39}$/u.test(category))
+          throw new Error(`categories[${index}] is invalid.`);
+        return category;
+      }),
+    ),
+  ];
+  if (!TIERS.includes(args.recommendedTier) || !TIERS.includes(args.selectedTier))
+    throw new Error('recommendedTier and selectedTier must be fast, balanced, deep, or max.');
   return { categories, recommendedTier: args.recommendedTier, selectedTier: args.selectedTier };
 }
 
 export const OVERRIDE_INPUT_SCHEMA = {
-  type: 'object', additionalProperties: false, required: ['categories', 'recommendedTier', 'selectedTier'],
+  type: 'object',
+  additionalProperties: false,
+  required: ['categories', 'recommendedTier', 'selectedTier'],
   properties: {
-    categories: { type: 'array', minItems: 1, maxItems: 16, uniqueItems: true, items: { type: 'string', pattern: '^[a-z0-9][a-z0-9_-]{0,39}$' } },
-    recommendedTier: { type: 'string', enum: TIERS },
-    selectedTier: { type: 'string', enum: TIERS },
+    categories: {
+      type: 'array',
+      minItems: 1,
+      maxItems: 16,
+      uniqueItems: true,
+      description:
+        'Task categories the corrected decision applies to, taken verbatim from taskCategories in the route_request response — for example "code", "high-stakes", "reasoning", "research". Category names only: this tool rejects prompt text, file data, model identifiers, notes, and any field not listed here.',
+      items: {
+        type: 'string',
+        pattern: '^[a-z0-9][a-z0-9_-]{0,39}$',
+        description: 'A lowercase category name of at most 40 characters.',
+      },
+    },
+    recommendedTier: { type: 'string', enum: TIERS, description: 'The tier Switchboard recommended.' },
+    selectedTier: {
+      type: 'string',
+      enum: TIERS,
+      description:
+        'The tier actually used. Higher than recommendedTier records an upgrade, lower records a downgrade. Learned downgrades can never route beneath a capability or safety floor.',
+    },
   },
 };

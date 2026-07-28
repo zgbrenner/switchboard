@@ -1,6 +1,6 @@
 # Contributing to Switchboard
 
-Switchboard's primary current interface is the local MCP server. The repository also retains a Chromium extension foundation and experimental local-model tooling.
+Switchboard is a local MCP server. It has no runtime dependencies; everything under `mcp/` imports only `mcp/` and Node builtins, and the routing engine in `src/` compiles to `dist/js/`.
 
 ## Local verification
 
@@ -19,7 +19,37 @@ The complete repository gate is:
 npm run verify
 ```
 
-Run checks locally. Do not add GitHub Actions or depend on GitHub-hosted CI minutes.
+This runs typecheck, lint, format check, the full test suite, the production build, and a real stdio
+smoke test against the built server.
+
+**There is no CI, so this gate is entirely manual — it must pass before anything is merged.**
+`prepublishOnly` runs it again so a release cannot skip it, but nothing prevents a merge. Reviewers
+should ask for the output.
+
+Individual gates, for iterating on one area without paying for the whole suite:
+
+```bash
+npm run typecheck
+npm run lint
+npm run format        # rewrites; use format:check to only report
+npm test
+npm run build
+npm run mcp:smoke
+```
+
+Two release checks nothing runs for you:
+
+```bash
+npm pack              # then install the tarball into an empty project and drive it over stdio
+npx @modelcontextprotocol/inspector --cli node mcp/index.mjs --method tools/list
+```
+
+The first is the only check that catches a missing `files` entry or a broken build hook — a defect
+that breaks the published package while every local test still passes.
+
+If you change any tool's name, description, annotations, or schema, `npm test` will fail against the
+committed contract snapshot. That is deliberate: `tools/list` is a public API. Accept an intentional
+change with `npm run snapshot:update` and include the resulting diff in your PR.
 
 ## MCP contribution rules
 
@@ -107,21 +137,6 @@ Add a failing benchmark or unit test before changing:
 - Preference adjustments
 
 Evaluate harmful under-routing separately from wasteful over-routing. A lower average error rate does not justify a regression in consequential under-routing.
-
-## Browser-extension foundation
-
-Keep routing, file extraction, provider adapters, storage, and model-pack validation in separate modules.
-
-Provider UI selectors must:
-
-- Prefer accessible labels, roles, and stable test identifiers
-- Avoid positional selectors when possible
-- Use bounded retries
-- Verify a compatible visible selection
-- Preserve the draft
-- Fail open instead of blocking send
-
-Do not add broad host permissions, raw prompt persistence, remote executable code, or runtime downloads from moving model revisions.
 
 ## File handling
 

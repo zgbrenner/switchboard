@@ -1,2 +1,2 @@
-export { CURRENT_PROTOCOL_VERSION, SUPPORTED_PROTOCOL_VERSIONS, SERVER_INFO } from './server/metadata.mjs';
+export { CURRENT_PROTOCOL_VERSION, SERVER_INFO, SUPPORTED_PROTOCOL_VERSIONS } from './server/metadata.mjs';
 export { createSwitchboardMcpSession } from './server/session.mjs';

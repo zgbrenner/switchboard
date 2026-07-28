@@ -1,5 +1,5 @@
-import { rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { rm } from 'node:fs/promises';
 
 await rm('.test-dist', { recursive: true, force: true });
 const compile = spawnSync('tsc', ['-p', 'tsconfig.test.json'], { stdio: 'inherit' });
