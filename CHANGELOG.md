@@ -61,10 +61,13 @@ work, and the routing quality claims could not be checked. Both are addressed he
 - `test/router-properties.test.mjs`: determinism, policy monotonicity, floor inviolability, cosmetic
   invariance, keyword-flip stability, and confidence honesty. Five of these fail against 0.5.
 - `test/mcp-protocol-errors.test.mjs` covering the JSON-RPC semantics above.
-- CI across Node 22/24 on Ubuntu and Windows, including a test that installs the packed tarball into
-  a clean project and drives the binary over stdio.
 - Biome for linting and formatting, configured to fail the build on any stdout write under `mcp/`
   or `src/`.
+- A committed snapshot of the published `tools/list` contract, so any change to a tool name,
+  description, annotation or schema fails the test suite instead of shipping silently. Accept an
+  intentional change with `npm run snapshot:update`.
+- A description on every one of the 45 input-schema properties across the nine tools. These are what
+  a model fills arguments from; previously none had one.
 
 ### Changed
 
@@ -77,6 +80,11 @@ work, and the routing quality claims could not be checked. Both are addressed he
   troubleshooting table, a complete configuration table including three previously undocumented
   environment variables, and an honest limitations section.
 - `benchmarks/README.md` now leads with the measured result rather than the corpus description.
+- **`npm run verify` is the release gate and it is manual.** This repository has no CI: GitHub-hosted
+  runners are not available to it, and a permanently failing workflow is worse than an honest manual
+  gate. `prepublishOnly` runs the same command so a publish cannot skip it, and CONTRIBUTING.md
+  documents the two release checks nothing runs for you — installing the packed tarball into an empty
+  project, and driving the server with the MCP Inspector.
 
 ### Removed
 

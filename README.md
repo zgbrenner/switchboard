@@ -1,4 +1,3 @@
-[![CI](https://github.com/zgbrenner/switchboard/actions/workflows/ci.yml/badge.svg)](https://github.com/zgbrenner/switchboard/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/switchboard-mcp.svg)](https://www.npmjs.com/package/switchboard-mcp)
 [![Node](https://img.shields.io/node/v/switchboard-mcp.svg)](https://nodejs.org)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -348,6 +347,21 @@ npm run benchmark       # routing regression corpus
 npm run eval:fetch      # download HELM outcome data (no API key)
 npm run benchmark:oracle
 ```
+
+There is no CI. **`npm run verify` is the gate**, and it must pass before anything is merged or
+published — `prepublishOnly` runs it again so a release cannot skip it. It covers typecheck, lint,
+format, the full test suite, the production build, and a real stdio smoke test against the built
+server.
+
+Two checks worth running by hand before a release, because nothing runs them for you:
+
+```bash
+npm pack                                  # then install the tarball into an empty project
+npx @modelcontextprotocol/inspector --cli node mcp/index.mjs --method tools/list
+```
+
+The first is the only check that catches a missing `files` entry or a broken build hook — the class
+of defect that makes a published package fail on install while every local test still passes.
 
 stdout carries newline-delimited JSON-RPC only. A stray `console.log` anywhere under `mcp/` or
 `src/` corrupts the stream and the client silently drops the connection — the linter fails the build
