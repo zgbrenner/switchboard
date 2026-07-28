@@ -1,4 +1,12 @@
-import type { CapabilitySet, EffortLevel, QualityTier, RoutingDecision, RoutingRequest } from '../shared/types.js';
+import type {
+  CapabilitySet,
+  EffortLevel,
+  QualityTier,
+  RoutingDecision,
+  RoutingPolicy,
+  RoutingReason,
+  RoutingRequest,
+} from '../shared/types.js';
 import { policyBias, TIER_ORDER, tierAtLeast } from './policies.js';
 import { semanticRouteScores } from './semantic.js';
 import { extractSignals } from './signals.js';
@@ -14,15 +22,51 @@ function softmax(raw: Record<QualityTier, number>): Record<QualityTier, number> 
   return Object.fromEntries(TIER_ORDER.map((tier, index) => [tier, (exp[index] ?? 0) / total])) as Record<QualityTier, number>;
 }
 
+/**
+ * Score thresholds separating the four tiers.
+ *
+ * These are calibrated against benchmarks/router-cases.jsonl; `npm run benchmark` fails if a change
+ * here regresses the labelled corpus, and `npm run benchmark:oracle` reports the effect against
+ * measured per-model outcomes. They are not arbitrary, but they are also not learned — see the
+ * Limitations section of the README.
+ */
+const TIER_THRESHOLDS = Object.freeze({ fast: -0.35, balanced: 2.1, deep: 5.5 });
+
 function deterministicTier(score: number): QualityTier {
-  if (score <= -0.35) return 'fast';
-  if (score < 2.1) return 'balanced';
-  if (score < 5.5) return 'deep';
+  if (score <= TIER_THRESHOLDS.fast) return 'fast';
+  if (score < TIER_THRESHOLDS.balanced) return 'balanced';
+  if (score < TIER_THRESHOLDS.deep) return 'deep';
   return 'max';
 }
 
+/**
+ * Additive score shift applied by the caller's cost/quality policy.
+ *
+ * Sized against the tier thresholds above so that a policy can move a borderline request one tier in
+ * either direction, which is the entire point of exposing the control. Floors are applied *after*
+ * this shift, so no policy can route beneath a safety floor no matter how aggressive it is.
+ */
+const POLICY_SCORE_SHIFT: Readonly<Record<RoutingPolicy, number>> = Object.freeze({
+  best: 1.6,
+  balanced: 0,
+  fast: -1.6,
+  conserve: -2.4,
+});
+
 function effortFor(tier: QualityTier): EffortLevel {
   return ({ fast: 'low', balanced: 'medium', deep: 'high', max: 'max' } as const)[tier];
+}
+
+/**
+ * Total absolute weight of the signals that actually fired. 'short-request' is excluded because it
+ * records the *absence* of evidence, and counting it would let an empty prompt look well-evidenced.
+ */
+function strengthOf(signals: { reasons: RoutingReason[] }): number {
+  let total = 0;
+  for (const reason of signals.reasons) {
+    if (reason.code !== 'short-request') total += Math.abs(reason.weight);
+  }
+  return total;
 }
 
 function mergeCapabilities(target: CapabilitySet, source: Partial<CapabilitySet>): void {
@@ -44,6 +88,12 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
   const categories = new Set(promptSignals.categories);
   const capabilities: CapabilitySet = { ...promptSignals.capabilities };
   let floor: QualityTier = 'fast';
+
+  if (promptSignals.unreadableScript) {
+    // The keyword signals are English-only. Defaulting an unanalysable prompt to the cheapest tier
+    // would silently under-serve every non-English user, so hold a mid floor and ask for a judge.
+    floor = tierAtLeast(floor, 'balanced');
+  }
 
   if (contextualSignals) {
     score += contextualSignals.score * 0.85;
@@ -85,14 +135,23 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
 
   if (request.files.length > 0) {
     capabilities.files = true;
-    floor = 'balanced';
-    reasons.push({ code: 'attachments', detail: `${request.files.length} attached file(s) require a file-capable model.`, weight: 0.9 });
-    score += 0.9;
+    // tierAtLeast, not assignment: an attachment must never lower a floor established by the prompt.
+    floor = tierAtLeast(floor, 'balanced');
     categories.add('files');
     const totalText = request.files.reduce((sum, file) => sum + file.textLength, 0);
+    // An attachment always requires a file-capable model, but a 100-byte note is not evidence of a
+    // harder reasoning task. Scale the difficulty contribution with the content actually attached
+    // instead of charging a flat premium that can push an already-deep request to the top tier.
+    const attachmentWeight = Math.min(0.9, 0.15 + totalText / 20000);
+    reasons.push({
+      code: 'attachments',
+      detail: `${request.files.length} attached file(s) require a file-capable model.`,
+      weight: attachmentWeight,
+    });
+    score += attachmentWeight;
     if (totalText > 24000 || request.files.some((file) => file.capabilities.longContext)) {
       capabilities.longContext = true;
-      floor = 'deep';
+      floor = tierAtLeast(floor, 'deep');
       score += 1.1;
       reasons.push({
         code: 'large-attachments',
@@ -117,6 +176,18 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
     }
   }
 
+  // The caller's policy shifts the score before thresholding, so it can genuinely move a borderline
+  // request between tiers. Floors are applied after, and therefore always win.
+  const policyShift = POLICY_SCORE_SHIFT[request.preferences.policy] ?? 0;
+  if (policyShift !== 0) {
+    score += policyShift;
+    reasons.push({
+      code: 'policy-adjustment',
+      detail: `The ${request.preferences.policy} policy shifted the routing score by ${policyShift > 0 ? '+' : ''}${policyShift}.`,
+      weight: policyShift,
+    });
+  }
+
   const deterministic = tierAtLeast(deterministicTier(score), floor);
   const semanticText = [request.prompt, contextText, ...request.files.map((file) => file.excerpt)].filter(Boolean).join('\n');
   const semantic = semanticRouteScores(semanticText);
@@ -130,16 +201,33 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
     if (TIER_ORDER.indexOf(tier) < TIER_ORDER.indexOf(floor)) raw[tier] -= 8;
   }
 
+  // `scores` is a reported distribution over tiers used for margin and explanation. The decision
+  // itself is the deterministic ladder above, clamped by the floor -- not this distribution's argmax.
+  // Keeping the two separate is what makes a routing decision explainable after the fact.
   const probabilities = softmax(raw);
   const ranked = TIER_ORDER.map((tier) => ({ tier, score: probabilities[tier] })).sort((left, right) => right.score - left.score);
-  const selected = ranked[0]?.tier ?? deterministic;
-  const top = ranked[0]?.score ?? 0;
-  const second = ranked[1]?.score ?? 0;
-  const margin = top - second;
+  const margin = (ranked[0]?.score ?? 0) - (ranked[1]?.score ?? 0);
   const explicitMax = reasons.some((reason) => reason.code === 'explicit-research') && score >= 4.5;
-  const finalTier = explicitMax ? 'max' : tierAtLeast(selected, floor);
-  const shouldUseJudge = promptSignals.vagueFollowUp || promptSignals.conflictingSignals || margin < 0.18;
-  const confidence = clamp(explicitMax ? 0.94 : 0.58 + margin * 1.5 + Math.min(Math.abs(score), 4) * 0.045);
+  const finalTier = explicitMax ? tierAtLeast('max', floor) : deterministic;
+  const shouldUseJudge =
+    promptSignals.vagueFollowUp || promptSignals.conflictingSignals || promptSignals.unreadableScript || margin < 0.18;
+
+  // Confidence reflects how much evidence the decision actually rests on, measured as the total
+  // absolute weight of the signals that fired -- not how many fired, since one unambiguous signal
+  // ("make this friendlier") is stronger evidence than three weak ones. The curve saturates, so
+  // piling on more signals cannot manufacture certainty. A prompt that matched nothing must not
+  // report high confidence merely because the tier ladder has a default.
+  //
+  // This is an evidence score, NOT a calibrated probability. See the README's Limitations section.
+  const evidenceStrength = strengthOf(promptSignals) + (contextualSignals ? strengthOf(contextualSignals) : 0);
+  const confidence =
+    evidenceStrength === 0
+      ? 0.25
+      : clamp(
+          0.3 + 0.6 * (1 - Math.exp(-evidenceStrength / 1.8)) + margin * 0.07 - (promptSignals.unreadableScript ? 0.22 : 0),
+          0.05,
+          0.97,
+        );
 
   return {
     tier: finalTier,
