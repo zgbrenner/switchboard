@@ -1,11 +1,5 @@
-import type {
-  CapabilitySet,
-  EffortLevel,
-  QualityTier,
-  RoutingDecision,
-  RoutingRequest,
-} from '../shared/types.js';
-import { policyBias, tierAtLeast, TIER_ORDER } from './policies.js';
+import type { CapabilitySet, EffortLevel, QualityTier, RoutingDecision, RoutingRequest } from '../shared/types.js';
+import { policyBias, TIER_ORDER, tierAtLeast } from './policies.js';
 import { semanticRouteScores } from './semantic.js';
 import { extractSignals } from './signals.js';
 
@@ -38,7 +32,10 @@ function mergeCapabilities(target: CapabilitySet, source: Partial<CapabilitySet>
 }
 
 export function routeRequest(request: RoutingRequest): RoutingDecision {
-  const contextText = request.context.slice(-4).map((turn) => `${turn.role}: ${turn.text}`).join('\n');
+  const contextText = request.context
+    .slice(-4)
+    .map((turn) => `${turn.role}: ${turn.text}`)
+    .join('\n');
   const promptSignals = extractSignals(request.prompt);
   const contextualSignals = promptSignals.vagueFollowUp && contextText ? extractSignals(contextText) : undefined;
 
@@ -50,24 +47,40 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
 
   if (contextualSignals) {
     score += contextualSignals.score * 0.85;
-    reasons.push({ code: 'context-dependent', detail: 'The latest prompt depends on recent conversation context.', weight: contextualSignals.score * 0.85 });
-    contextualSignals.categories.forEach((category) => categories.add(category));
+    reasons.push({
+      code: 'context-dependent',
+      detail: 'The latest prompt depends on recent conversation context.',
+      weight: contextualSignals.score * 0.85,
+    });
+    for (const category of contextualSignals.categories) categories.add(category);
     mergeCapabilities(capabilities, contextualSignals.capabilities);
     if (contextualSignals.categories.some((category) => ['high-stakes', 'comparison', 'reasoning', 'code'].includes(category))) {
       floor = 'deep';
-      reasons.push({ code: 'context-complexity-floor', detail: 'The referenced prior task requires deep reasoning even though the follow-up is short.', weight: 1.4 });
+      reasons.push({
+        code: 'context-complexity-floor',
+        detail: 'The referenced prior task requires deep reasoning even though the follow-up is short.',
+        weight: 1.4,
+      });
     }
   }
 
   if (capabilities.vision) {
     floor = tierAtLeast(floor, 'balanced');
     score += 0.6;
-    reasons.push({ code: 'vision-floor', detail: 'Visual interpretation requires a vision-capable model and at least balanced reasoning.', weight: 0.6 });
+    reasons.push({
+      code: 'vision-floor',
+      detail: 'Visual interpretation requires a vision-capable model and at least balanced reasoning.',
+      weight: 0.6,
+    });
   }
 
   if (categories.has('code') && (categories.has('planning') || categories.has('high-stakes'))) {
     floor = tierAtLeast(floor, 'deep');
-    reasons.push({ code: 'complex-code-floor', detail: 'Code combined with architecture or high-stakes review requires deep reasoning.', weight: 1.2 });
+    reasons.push({
+      code: 'complex-code-floor',
+      detail: 'Code combined with architecture or high-stakes review requires deep reasoning.',
+      weight: 1.2,
+    });
   }
 
   if (request.files.length > 0) {
@@ -81,7 +94,11 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
       capabilities.longContext = true;
       floor = 'deep';
       score += 1.1;
-      reasons.push({ code: 'large-attachments', detail: 'The extracted file content requires stronger long-context handling.', weight: 1.1 });
+      reasons.push({
+        code: 'large-attachments',
+        detail: 'The extracted file content requires stronger long-context handling.',
+        weight: 1.1,
+      });
     }
     if (request.files.some((file) => file.capabilities.vision)) {
       capabilities.vision = true;
@@ -114,9 +131,7 @@ export function routeRequest(request: RoutingRequest): RoutingDecision {
   }
 
   const probabilities = softmax(raw);
-  const ranked = TIER_ORDER
-    .map((tier) => ({ tier, score: probabilities[tier] }))
-    .sort((left, right) => right.score - left.score);
+  const ranked = TIER_ORDER.map((tier) => ({ tier, score: probabilities[tier] })).sort((left, right) => right.score - left.score);
   const selected = ranked[0]?.tier ?? deterministic;
   const top = ranked[0]?.score ?? 0;
   const second = ranked[1]?.score ?? 0;

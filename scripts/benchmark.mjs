@@ -1,5 +1,5 @@
-import { readFile, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
+import { readFile, rm } from 'node:fs/promises';
 
 await rm('.test-dist', { recursive: true, force: true });
 const compile = spawnSync('tsc', ['-p', 'tsconfig.test.json'], { stdio: 'inherit' });
@@ -10,10 +10,16 @@ const [{ routeRequest }, { evaluateRoutingCases, validateBenchmarkCase }] = awai
   import('../.test-dist/evaluation/metrics.js'),
 ]);
 const source = await readFile('benchmarks/router-cases.jsonl', 'utf8');
-const cases = source.split(/\r?\n/).filter(Boolean).map((line, index) => {
-  try { return validateBenchmarkCase(JSON.parse(line)); }
-  catch (error) { throw new Error(`Invalid benchmark line ${index + 1}: ${error instanceof Error ? error.message : String(error)}`); }
-});
+const cases = source
+  .split(/\r?\n/)
+  .filter(Boolean)
+  .map((line, index) => {
+    try {
+      return validateBenchmarkCase(JSON.parse(line));
+    } catch (error) {
+      throw new Error(`Invalid benchmark line ${index + 1}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  });
 const evaluated = cases.map((benchmarkCase) => ({
   case: benchmarkCase,
   decision: routeRequest({

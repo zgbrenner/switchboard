@@ -8,9 +8,13 @@ const request = (id, method, params) => ({ jsonrpc: '2.0', id, method, ...(param
 
 test('every MCP tool publishes a bounded JSON Schema 2020-12 output contract', async () => {
   const session = createSwitchboardMcpSession();
-  await session.handle(request(1, 'initialize', {
-    protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'schema-test', version: '1' },
-  }));
+  await session.handle(
+    request(1, 'initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'schema-test', version: '1' },
+    }),
+  );
   await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
   const response = await session.handle(request(2, 'tools/list', {}));
   assert.equal(response.result.tools.length, 9);

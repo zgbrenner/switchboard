@@ -44,7 +44,9 @@ test('snapshots and route adjustments wait for queued writes', async () => {
   assert.equal(snapshot.categories.analysis.overrides, 3);
 
   const base = {
-    tier: 'balanced', effort: 'medium', taskCategories: ['analysis'],
+    tier: 'balanced',
+    effort: 'medium',
+    taskCategories: ['analysis'],
     capabilities: { web: false, files: false, vision: false, longContext: false, code: false },
   };
   const adjusted = await store.apply(base);

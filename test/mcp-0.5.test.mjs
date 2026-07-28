@@ -23,7 +23,9 @@ function baseDecision(overrides = {}) {
 
 async function session(route = async () => baseDecision(), preferenceStore = new AggregatePreferenceStore()) {
   const value = createSwitchboardMcpSession({ route, preferenceStore });
-  const initialized = await value.handle(request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'mcp-0.5-test', version: '1' } }));
+  const initialized = await value.handle(
+    request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'mcp-0.5-test', version: '1' } }),
+  );
   assert.equal(initialized.result.serverInfo.version, '0.5.0');
   await value.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
   return value;
@@ -37,10 +39,20 @@ test('publishes the full 0.5 tool surface and additive API metadata', async () =
   assert.equal(SERVER_INFO.version, '0.5.0');
   const value = await session();
   const listed = await value.handle(request(2, 'tools/list', {}));
-  assert.deepEqual(listed.result.tools.map((item) => item.name), [
-    'route_request', 'explain_route', 'compare_routes', 'simulate_policy', 'validate_model_inventory', 'evaluate_router',
-    'record_override', 'get_preference_state', 'reset_preference_state',
-  ]);
+  assert.deepEqual(
+    listed.result.tools.map((item) => item.name),
+    [
+      'route_request',
+      'explain_route',
+      'compare_routes',
+      'simulate_policy',
+      'validate_model_inventory',
+      'evaluate_router',
+      'record_override',
+      'get_preference_state',
+      'reset_preference_state',
+    ],
+  );
   assert.equal(listed.result.tools.find((item) => item.name === 'reset_preference_state').annotations.destructiveHint, true);
   const resource = await value.handle(request(3, 'resources/read', { uri: 'switchboard://api' }));
   const metadata = JSON.parse(resource.result.contents[0].text);
@@ -50,7 +62,14 @@ test('publishes the full 0.5 tool surface and additive API metadata', async () =
 });
 
 test('route_request preserves old fields and adds confidence budget planning and learning metadata', async () => {
-  const value = await session(async () => baseDecision({ tier: 'deep', effort: 'high', taskCategories: ['security', 'code'], capabilities: { web: false, files: false, vision: false, longContext: false, code: true } }));
+  const value = await session(async () =>
+    baseDecision({
+      tier: 'deep',
+      effort: 'high',
+      taskCategories: ['security', 'code'],
+      capabilities: { web: false, files: false, vision: false, longContext: false, code: true },
+    }),
+  );
   const response = await tool(value, 2, 'route_request', {
     prompt: 'Audit this authentication implementation.',
     profile: 'security',
@@ -72,7 +91,11 @@ test('route_request preserves old fields and adds confidence budget planning and
 
 test('profiles cannot lower safety floors and low-cost budgets report conflicts', async () => {
   const value = await session(async () => baseDecision({ tier: 'balanced', effort: 'medium' }));
-  const legal = await tool(value, 2, 'route_request', { prompt: 'Analyze this contract.', profile: 'legal', budget: { maxRelativeCost: 0.1 } });
+  const legal = await tool(value, 2, 'route_request', {
+    prompt: 'Analyze this contract.',
+    profile: 'legal',
+    budget: { maxRelativeCost: 0.1 },
+  });
   const result = legal.result.structuredContent;
   assert.equal(result.tier, 'deep');
   assert.equal(result.effectivePolicy, 'best');
@@ -81,7 +104,13 @@ test('profiles cannot lower safety floors and low-cost budgets report conflicts'
 });
 
 test('host model inventories expose capability negotiation and concrete recommendations', async () => {
-  const value = await session(async () => baseDecision({ tier: 'deep', effort: 'high', capabilities: { web: true, files: false, vision: false, longContext: false, code: true } }));
+  const value = await session(async () =>
+    baseDecision({
+      tier: 'deep',
+      effort: 'high',
+      capabilities: { web: true, files: false, vision: false, longContext: false, code: true },
+    }),
+  );
   const inventory = [
     { id: 'fast', tier: 'fast', effortLevels: ['low'], capabilities: { web: false, code: true }, relativeCost: 0.1, relativeLatency: 0.1 },
     { id: 'deep', tier: 'deep', effortLevels: ['high'], capabilities: { web: true, code: true }, relativeCost: 0.6, relativeLatency: 0.5 },
@@ -109,7 +138,12 @@ test('explain_route returns concise structured evidence', async () => {
 });
 
 test('compare_routes and simulate_policy compare bounded variants deterministically', async () => {
-  const value = await session(async (input) => baseDecision({ tier: input.preferences.policy === 'best' ? 'deep' : 'fast', effort: input.preferences.policy === 'best' ? 'high' : 'low' }));
+  const value = await session(async (input) =>
+    baseDecision({
+      tier: input.preferences.policy === 'best' ? 'deep' : 'fast',
+      effort: input.preferences.policy === 'best' ? 'high' : 'low',
+    }),
+  );
   const args = {
     prompt: 'Draft and review this response.',
     variants: [
@@ -125,16 +159,18 @@ test('compare_routes and simulate_policy compare bounded variants deterministica
 });
 
 test('evaluate_router reports under-routing over-routing capability recall and confusion matrix', async () => {
-  const value = await session(async (input) => {
+  const value = await session((input) => {
     if (input.prompt.includes('under')) return baseDecision({ tier: 'fast' });
     if (input.prompt.includes('over')) return baseDecision({ tier: 'deep' });
     return baseDecision({ tier: 'balanced', capabilities: { web: true, files: false, vision: false, longContext: false, code: false } });
   });
-  const response = await tool(value, 2, 'evaluate_router', { cases: [
-    { id: 'under', prompt: 'under route case', expectedTier: 'deep' },
-    { id: 'over', prompt: 'over route case', expectedTier: 'fast' },
-    { id: 'exact', prompt: 'exact route case', expectedTier: 'balanced', requiredCapabilities: ['web'] },
-  ] });
+  const response = await tool(value, 2, 'evaluate_router', {
+    cases: [
+      { id: 'under', prompt: 'under route case', expectedTier: 'deep' },
+      { id: 'over', prompt: 'over route case', expectedTier: 'fast' },
+      { id: 'exact', prompt: 'exact route case', expectedTier: 'balanced', requiredCapabilities: ['web'] },
+    ],
+  });
   const metrics = response.result.structuredContent;
   assert.equal(metrics.caseCount, 3);
   assert.equal(metrics.harmfulUnderRouting.count, 1);
@@ -147,7 +183,11 @@ test('aggregate override learning stores categories only and can upgrade one tie
   const store = new AggregatePreferenceStore();
   const value = await session(async () => baseDecision({ tier: 'balanced', effort: 'medium', taskCategories: ['analysis'] }), store);
   for (let index = 0; index < 3; index += 1) {
-    const recorded = await tool(value, 2 + index, 'record_override', { categories: ['analysis'], recommendedTier: 'balanced', selectedTier: 'deep' });
+    const recorded = await tool(value, 2 + index, 'record_override', {
+      categories: ['analysis'],
+      recommendedTier: 'balanced',
+      selectedTier: 'deep',
+    });
     assert.equal(recorded.result.structuredContent.persistent, false);
     assert.equal(Object.hasOwn(recorded.result.structuredContent, 'prompt'), false);
   }
@@ -167,7 +207,16 @@ test('aggregate learning cannot downgrade high-stakes or capability-bound routes
   for (let index = 0; index < 4; index += 1) {
     await store.record({ categories: ['security'], recommendedTier: 'deep', selectedTier: 'balanced' });
   }
-  const value = await session(async () => baseDecision({ tier: 'deep', effort: 'high', taskCategories: ['security'], capabilities: { web: false, files: false, vision: false, longContext: false, code: true } }), store);
+  const value = await session(
+    async () =>
+      baseDecision({
+        tier: 'deep',
+        effort: 'high',
+        taskCategories: ['security'],
+        capabilities: { web: false, files: false, vision: false, longContext: false, code: true },
+      }),
+    store,
+  );
   const routed = await tool(value, 2, 'route_request', { prompt: 'Audit this authentication code.', profile: 'security' });
   assert.equal(routed.result.structuredContent.tier, 'deep');
   assert.equal(routed.result.structuredContent.learningAdjustment.applied, false);
@@ -176,7 +225,12 @@ test('aggregate learning cannot downgrade high-stakes or capability-bound routes
 
 test('record_override rejects raw prompt fields and strict bounds reject invalid inputs', async () => {
   const value = await session();
-  const raw = await tool(value, 2, 'record_override', { categories: ['analysis'], recommendedTier: 'balanced', selectedTier: 'deep', prompt: 'must not be accepted' });
+  const raw = await tool(value, 2, 'record_override', {
+    categories: ['analysis'],
+    recommendedTier: 'balanced',
+    selectedTier: 'deep',
+    prompt: 'must not be accepted',
+  });
   assert.equal(raw.result.isError, true);
   assert.match(raw.result.content[0].text, /unsupported property/i);
 
@@ -188,7 +242,9 @@ test('record_override rejects raw prompt fields and strict bounds reject invalid
   assert.equal(budget.result.isError, true);
   assert.match(budget.result.content[0].text, /maxStages/i);
 
-  const evaluation = await tool(value, 5, 'evaluate_router', { cases: Array.from({ length: 101 }, (_, index) => ({ prompt: `case ${index}`, expectedTier: 'fast' })) });
+  const evaluation = await tool(value, 5, 'evaluate_router', {
+    cases: Array.from({ length: 101 }, (_, index) => ({ prompt: `case ${index}`, expectedTier: 'fast' })),
+  });
   assert.equal(evaluation.result.isError, true);
   assert.match(evaluation.result.content[0].text, /100/);
 });

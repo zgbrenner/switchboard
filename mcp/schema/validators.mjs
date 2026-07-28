@@ -12,7 +12,9 @@ export function exactKeys(value, allowed, label) {
 
 export function stringValue(value, label, { min = 0, max = 64_000, nonWhitespace = false } = {}) {
   if (typeof value !== 'string' || value.length < min || value.length > max || (nonWhitespace && !value.trim())) {
-    throw new Error(`${label} must be a string between ${min} and ${max} characters${nonWhitespace ? ' and contain a non-whitespace character' : ''}.`);
+    throw new Error(
+      `${label} must be a string between ${min} and ${max} characters${nonWhitespace ? ' and contain a non-whitespace character' : ''}.`,
+    );
   }
   return value;
 }
@@ -55,13 +57,20 @@ export function parseContext(value) {
 }
 
 function defaultMediaType(type) {
-  return ({
-    text: 'text/plain', markdown: 'text/markdown', html: 'text/html', json: 'application/json', csv: 'text/csv',
-    pdf: 'application/pdf', docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  return {
+    text: 'text/plain',
+    markdown: 'text/markdown',
+    html: 'text/html',
+    json: 'application/json',
+    csv: 'text/csv',
+    pdf: 'application/pdf',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', zip: 'application/zip',
-    image: 'application/octet-stream', unknown: 'application/octet-stream',
-  })[type];
+    xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    zip: 'application/zip',
+    image: 'application/octet-stream',
+    unknown: 'application/octet-stream',
+  }[type];
 }
 
 export function parseFiles(value) {
@@ -76,17 +85,28 @@ export function parseFiles(value) {
     const size = file.size === undefined ? 0 : integer(file.size, `${label}.size`, { max: 1_000_000_000 });
     const textLength = file.textLength === undefined ? 0 : integer(file.textLength, `${label}.textLength`, { max: 1_000_000 });
     const excerpt = file.excerpt === undefined ? '' : stringValue(file.excerpt, `${label}.excerpt`, { max: 4_000 });
-    const mediaType = file.mediaType === undefined
-      ? defaultMediaType(detectedType)
-      : stringValue(file.mediaType, `${label}.mediaType`, { min: 1, max: 200, nonWhitespace: true });
+    const mediaType =
+      file.mediaType === undefined
+        ? defaultMediaType(detectedType)
+        : stringValue(file.mediaType, `${label}.mediaType`, { min: 1, max: 200, nonWhitespace: true });
     const caps = file.capabilities === undefined ? {} : object(file.capabilities, `${label}.capabilities`);
     exactKeys(caps, ['vision', 'longContext'], `${label}.capabilities`);
     const warnings = file.warnings === undefined ? [] : file.warnings;
-    if (!Array.isArray(warnings) || warnings.length > 20 || warnings.some((warning) => typeof warning !== 'string' || warning.length > 500)) {
+    if (
+      !Array.isArray(warnings) ||
+      warnings.length > 20 ||
+      warnings.some((warning) => typeof warning !== 'string' || warning.length > 500)
+    ) {
       throw new Error(`${label}.warnings must contain at most 20 short strings.`);
     }
     return {
-      name, size, detectedType, mediaType, textLength, excerpt, warnings,
+      name,
+      size,
+      detectedType,
+      mediaType,
+      textLength,
+      excerpt,
+      warnings,
       capabilities: {
         files: true,
         vision: optionalBoolean(caps.vision, `${label}.capabilities.vision`, detectedType === 'image'),
@@ -125,19 +145,32 @@ export function normalizeModelInventory(value, label = 'availableModels') {
   return value.map((raw, index) => {
     const prefix = `${label}[${index}]`;
     const model = object(raw, prefix);
-    exactKeys(model, ['id', 'title', 'family', 'tier', 'effortLevels', 'capabilities', 'relativeCost', 'relativeLatency', 'available'], prefix);
+    exactKeys(
+      model,
+      ['id', 'title', 'family', 'tier', 'effortLevels', 'capabilities', 'relativeCost', 'relativeLatency', 'available'],
+      prefix,
+    );
     const id = stringValue(model.id, `${prefix}.id`, { min: 1, max: 200, nonWhitespace: true });
     if (identifiers.has(id)) throw new Error(`${label} contains duplicate id: ${id}.`);
     identifiers.add(id);
     const tier = enumValue(model.tier, TIERS, `${prefix}.tier`, 'balanced');
     const effortLevels = model.effortLevels === undefined ? [] : model.effortLevels;
-    if (!Array.isArray(effortLevels) || effortLevels.length > 4 || effortLevels.some((effort) => !EFFORTS.includes(effort)) || new Set(effortLevels).size !== effortLevels.length) {
+    if (
+      !Array.isArray(effortLevels) ||
+      effortLevels.length > 4 ||
+      effortLevels.some((effort) => !EFFORTS.includes(effort)) ||
+      new Set(effortLevels).size !== effortLevels.length
+    ) {
       throw new Error(`${prefix}.effortLevels is invalid or contains duplicates.`);
     }
     return {
       id,
-      ...(model.title === undefined ? {} : { title: stringValue(model.title, `${prefix}.title`, { min: 1, max: 200, nonWhitespace: true }) }),
-      ...(model.family === undefined ? {} : { family: stringValue(model.family, `${prefix}.family`, { min: 1, max: 100, nonWhitespace: true }) }),
+      ...(model.title === undefined
+        ? {}
+        : { title: stringValue(model.title, `${prefix}.title`, { min: 1, max: 200, nonWhitespace: true }) }),
+      ...(model.family === undefined
+        ? {}
+        : { family: stringValue(model.family, `${prefix}.family`, { min: 1, max: 100, nonWhitespace: true }) }),
       tier,
       effortLevels,
       capabilities: parseCapabilityMap(model.capabilities, `${prefix}.capabilities`),
@@ -154,7 +187,9 @@ export function parseBudget(value) {
   exactKeys(budget, ['maxRelativeCost', 'maxRelativeLatency', 'minQuality', 'maxStages'], 'budget');
   return {
     ...(budget.maxRelativeCost === undefined ? {} : { maxRelativeCost: numberValue(budget.maxRelativeCost, 'budget.maxRelativeCost') }),
-    ...(budget.maxRelativeLatency === undefined ? {} : { maxRelativeLatency: numberValue(budget.maxRelativeLatency, 'budget.maxRelativeLatency') }),
+    ...(budget.maxRelativeLatency === undefined
+      ? {}
+      : { maxRelativeLatency: numberValue(budget.maxRelativeLatency, 'budget.maxRelativeLatency') }),
     ...(budget.minQuality === undefined ? {} : { minQuality: numberValue(budget.minQuality, 'budget.minQuality') }),
     ...(budget.maxStages === undefined ? {} : { maxStages: integer(budget.maxStages, 'budget.maxStages', { min: 1, max: 4 }) }),
   };

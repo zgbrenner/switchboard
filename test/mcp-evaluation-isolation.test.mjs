@@ -20,15 +20,21 @@ const baseDecision = {
 async function readySession() {
   const preferenceStore = new AggregatePreferenceStore();
   const session = createSwitchboardMcpSession({ route: async () => ({ ...baseDecision }), preferenceStore });
-  await session.handle(request(1, 'initialize', {
-    protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'evaluation-isolation', version: '1' },
-  }));
+  await session.handle(
+    request(1, 'initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'evaluation-isolation', version: '1' },
+    }),
+  );
   await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
   for (let index = 0; index < 3; index += 1) {
-    await session.handle(request(2 + index, 'tools/call', {
-      name: 'record_override',
-      arguments: { categories: ['analysis'], recommendedTier: 'balanced', selectedTier: 'deep' },
-    }));
+    await session.handle(
+      request(2 + index, 'tools/call', {
+        name: 'record_override',
+        arguments: { categories: ['analysis'], recommendedTier: 'balanced', selectedTier: 'deep' },
+      }),
+    );
   }
   return session;
 }
@@ -42,9 +48,12 @@ function evaluationArguments(includePreferences) {
 
 test('evaluate_router excludes aggregate preferences from baseline metrics by default', async () => {
   const session = await readySession();
-  const response = await session.handle(request(10, 'tools/call', {
-    name: 'evaluate_router', arguments: evaluationArguments(undefined),
-  }));
+  const response = await session.handle(
+    request(10, 'tools/call', {
+      name: 'evaluate_router',
+      arguments: evaluationArguments(undefined),
+    }),
+  );
   const result = response.result.structuredContent;
   assert.equal(result.exactTierAccuracy, 1);
   assert.equal(result.preferenceAdjustedCases, 0);
@@ -54,9 +63,12 @@ test('evaluate_router excludes aggregate preferences from baseline metrics by de
 
 test('evaluate_router can observe preference-adjusted tiers without contaminating baseline metrics', async () => {
   const session = await readySession();
-  const response = await session.handle(request(11, 'tools/call', {
-    name: 'evaluate_router', arguments: evaluationArguments(true),
-  }));
+  const response = await session.handle(
+    request(11, 'tools/call', {
+      name: 'evaluate_router',
+      arguments: evaluationArguments(true),
+    }),
+  );
   const result = response.result.structuredContent;
   assert.equal(result.exactTierAccuracy, 1);
   assert.equal(result.preferenceAdjustedCases, 1);

@@ -9,7 +9,8 @@ function value(name, fallback) {
 
 function boundedInteger(name, fallback, minimum, maximum) {
   const parsed = Number(value(name, String(fallback)));
-  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum) throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`);
+  if (!Number.isInteger(parsed) || parsed < minimum || parsed > maximum)
+    throw new Error(`${name} must be an integer between ${minimum} and ${maximum}.`);
   return parsed;
 }
 

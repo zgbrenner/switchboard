@@ -48,7 +48,8 @@ export function validateBenchmarkCase(value: unknown): BenchmarkCase {
   const item = value as Partial<BenchmarkCase>;
   if (!item.id || !/^[a-z0-9][a-z0-9._-]+$/i.test(item.id)) throw new Error('Benchmark case id is invalid.');
   if (!item.prompt || typeof item.prompt !== 'string') throw new Error(`Benchmark case ${item.id} is missing a prompt.`);
-  if (typeof item.expected !== 'object' || item.expected === null) throw new Error(`Benchmark case ${item.id} is missing expected routing.`);
+  if (typeof item.expected !== 'object' || item.expected === null)
+    throw new Error(`Benchmark case ${item.id} is missing expected routing.`);
   const expected = item.expected as Partial<BenchmarkExpectation>;
   if (!TIERS.has(expected.minTier as QualityTier) || !TIERS.has(expected.maxTier as QualityTier)) {
     throw new Error(`Benchmark case ${item.id} has an invalid tier.`);
@@ -95,7 +96,7 @@ export function evaluateRoutingCases(items: EvaluatedRoutingCase[]): RoutingEval
   }
 
   const total = items.length;
-  const rate = (count: number): number => total === 0 ? 0 : count / total;
+  const rate = (count: number): number => (total === 0 ? 0 : count / total);
   return {
     total,
     inRange,

@@ -1,12 +1,13 @@
 node_modules/
 dist/
 .test-dist/
+coverage/
+release/
+*.tgz
 *.zip
 .DS_Store
-
-training/generated/
-training/output/
-model-packs/generated/
-model-packs/local/
 .venv/
-release/
+__pycache__/
+
+# Fetched evaluation data (regenerate with `npm run eval:fetch`)
+benchmarks/data/

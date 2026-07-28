@@ -11,27 +11,37 @@ function closestEffort(desired, supported) {
   if (!supported.length) return desired;
   if (supported.includes(desired)) return desired;
   const target = indexOf(EFFORT_ORDER, desired);
-  return [...supported].sort((left, right) => {
-    const leftDistance = Math.abs(indexOf(EFFORT_ORDER, left) - target);
-    const rightDistance = Math.abs(indexOf(EFFORT_ORDER, right) - target);
-    return leftDistance - rightDistance || indexOf(EFFORT_ORDER, right) - indexOf(EFFORT_ORDER, left);
-  })[0] ?? desired;
+  return (
+    [...supported].sort((left, right) => {
+      const leftDistance = Math.abs(indexOf(EFFORT_ORDER, left) - target);
+      const rightDistance = Math.abs(indexOf(EFFORT_ORDER, right) - target);
+      return leftDistance - rightDistance || indexOf(EFFORT_ORDER, right) - indexOf(EFFORT_ORDER, left);
+    })[0] ?? desired
+  );
 }
 
+/**
+ * Scoring weights used when ranking a host-supplied model inventory.
+ *
+ * `above` penalises (or, when negative, rewards) picking a model above the routed tier; `cost` and
+ * `latency` weight the model's normalised relativeCost and relativeLatency.
+ */
+const POLICY_WEIGHTS = Object.freeze({
+  best: Object.freeze({ above: -6, cost: 0.5, latency: 0.5 }),
+  fast: Object.freeze({ above: 6, cost: 2, latency: 6 }),
+  conserve: Object.freeze({ above: 8, cost: 7, latency: 2 }),
+  balanced: Object.freeze({ above: 2.5, cost: 3, latency: 2 }),
+});
+
 function policyWeights(policy) {
-  switch (policy) {
-    case 'best': return { above: -6, cost: 0.5, latency: 0.5 };
-    case 'fast': return { above: 6, cost: 2, latency: 6 };
-    case 'conserve': return { above: 8, cost: 7, latency: 2 };
-    case 'balanced':
-    default: return { above: 2.5, cost: 3, latency: 2 };
-  }
+  return POLICY_WEIGHTS[policy] ?? POLICY_WEIGHTS.balanced;
 }
 
 function publicCandidate(candidate, score, decision, unknownCapabilities) {
   const selectedEffort = closestEffort(decision.effort, candidate.effortLevels);
   const meetsTier = indexOf(TIER_ORDER, candidate.tier) >= indexOf(TIER_ORDER, decision.tier);
-  const meetsEffort = indexOf(EFFORT_ORDER, selectedEffort) >= indexOf(EFFORT_ORDER, decision.effort) || candidate.effortLevels.length === 0;
+  const meetsEffort =
+    indexOf(EFFORT_ORDER, selectedEffort) >= indexOf(EFFORT_ORDER, decision.effort) || candidate.effortLevels.length === 0;
   return {
     id: candidate.id,
     ...(candidate.title ? { title: candidate.title } : {}),
@@ -55,14 +65,20 @@ function negotiation(decision, eligibleCount, rejected) {
 }
 
 export function resolveModelInventory(decision, models, options = {}) {
-  if (models === undefined) return {
-    status: 'not-provided', recommended: null, alternatives: [],
-    negotiation: negotiation(decision, 0, []),
-  };
-  if (models.length === 0) return {
-    status: 'no-compatible-model', recommended: null, alternatives: [],
-    negotiation: negotiation(decision, 0, []),
-  };
+  if (models === undefined)
+    return {
+      status: 'not-provided',
+      recommended: null,
+      alternatives: [],
+      negotiation: negotiation(decision, 0, []),
+    };
+  if (models.length === 0)
+    return {
+      status: 'no-compatible-model',
+      recommended: null,
+      alternatives: [],
+      negotiation: negotiation(decision, 0, []),
+    };
 
   const policy = options.policy ?? 'balanced';
   const weights = policyWeights(policy);

@@ -56,7 +56,7 @@ export function confidenceEvidence(decision) {
   const deterministic = clamp(reasonWeight / 3);
   const required = Object.values(decision.capabilities ?? {}).filter(Boolean).length;
   const capabilityCertainty = required === 0 ? 1 : clamp(0.7 + required * 0.06);
-  const agreement = clamp((scoreMargin * 0.55) + (deterministic * 0.25) + (capabilityCertainty * 0.2));
+  const agreement = clamp(scoreMargin * 0.55 + deterministic * 0.25 + capabilityCertainty * 0.2);
   return {
     overall: round(decision.confidence ?? agreement),
     scoreMargin: round(scoreMargin),
@@ -73,7 +73,8 @@ function stage(id, purpose, tier, effort, capabilities, optional = false) {
 export function buildExecutionPlan(decision, { mode = 'auto', maxStages = 3 } = {}) {
   const categories = new Set(decision.taskCategories ?? []);
   const complex = ['deep', 'max'].includes(decision.tier);
-  const verificationHeavy = categories.has('research') || categories.has('legal') || categories.has('security') || categories.has('high-stakes');
+  const verificationHeavy =
+    categories.has('research') || categories.has('legal') || categories.has('security') || categories.has('high-stakes');
   if (mode === 'single' || maxStages === 1 || (!complex && mode !== 'multi')) {
     return { mode: 'single', stages: [stage('answer', 'Complete the request', decision.tier, decision.effort, decision.capabilities)] };
   }
@@ -84,11 +85,22 @@ export function buildExecutionPlan(decision, { mode = 'auto', maxStages = 3 } = 
   stages.push(stage('analyze', 'Analyze the request and produce a working answer', draftTier, draftEffort, decision.capabilities));
 
   if (stages.length < maxStages) {
-    stages.push(stage('refine', 'Refine the answer for completeness and correctness', decision.tier, decision.effort, decision.capabilities));
+    stages.push(
+      stage('refine', 'Refine the answer for completeness and correctness', decision.tier, decision.effort, decision.capabilities),
+    );
   }
 
   if (stages.length < maxStages && (verificationHeavy || decision.shouldUseJudge || mode === 'multi')) {
-    stages.push(stage('verify', 'Independently verify high-risk claims and requirements', maxTier(decision.tier, 'deep'), 'high', decision.capabilities, !verificationHeavy));
+    stages.push(
+      stage(
+        'verify',
+        'Independently verify high-risk claims and requirements',
+        maxTier(decision.tier, 'deep'),
+        'high',
+        decision.capabilities,
+        !verificationHeavy,
+      ),
+    );
   }
 
   return { mode: stages.length > 1 ? 'multi' : 'single', stages };
@@ -102,9 +114,9 @@ function modelCompatibility(modelResolution) {
 
 export function assessBudget(decision, modelResolution, budget) {
   const recommendation = modelResolution?.recommended;
-  const estimatedCost = recommendation?.relativeCost ?? ({ fast: 0.1, balanced: 0.35, deep: 0.65, max: 1 })[decision.tier];
-  const estimatedLatency = recommendation?.relativeLatency ?? ({ fast: 0.1, balanced: 0.35, deep: 0.65, max: 1 })[decision.tier];
-  const quality = ({ fast: 0.35, balanced: 0.6, deep: 0.82, max: 1 })[decision.tier];
+  const estimatedCost = recommendation?.relativeCost ?? { fast: 0.1, balanced: 0.35, deep: 0.65, max: 1 }[decision.tier];
+  const estimatedLatency = recommendation?.relativeLatency ?? { fast: 0.1, balanced: 0.35, deep: 0.65, max: 1 }[decision.tier];
+  const quality = { fast: 0.35, balanced: 0.6, deep: 0.82, max: 1 }[decision.tier];
   const compatibility = modelCompatibility(modelResolution);
   const violations = [];
   if (estimatedCost > budget.maxRelativeCost) violations.push('cost');

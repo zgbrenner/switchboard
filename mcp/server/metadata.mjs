@@ -6,7 +6,8 @@ export const SERVER_INFO = {
   name: 'switchboard',
   title: 'Switchboard Router',
   version: '0.5.0',
-  description: 'Local privacy-first request planning, model routing, diagnostics, evaluation, and aggregate preference learning for AI hosts.',
+  description:
+    'Local privacy-first request planning, model routing, diagnostics, evaluation, and aggregate preference learning for AI hosts.',
   websiteUrl: 'https://github.com/zgbrenner/switchboard',
 };
 
@@ -47,8 +48,15 @@ export const SERVER_METADATA = {
   protocolVersions: [...SUPPORTED_PROTOCOL_VERSIONS],
   transports: ['stdio', 'streamable-http'],
   tools: [
-    'route_request', 'explain_route', 'compare_routes', 'simulate_policy', 'validate_model_inventory', 'evaluate_router',
-    'record_override', 'get_preference_state', 'reset_preference_state',
+    'route_request',
+    'explain_route',
+    'compare_routes',
+    'simulate_policy',
+    'validate_model_inventory',
+    'evaluate_router',
+    'record_override',
+    'get_preference_state',
+    'reset_preference_state',
   ],
   adapterContract: ADAPTER_CONTRACT,
   privacy: {

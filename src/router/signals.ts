@@ -11,14 +11,17 @@ export interface SignalResult {
 
 const PATTERNS = {
   fast: /\b(rewrite|rephrase|proofread|fix grammar|make (?:this )?(?:shorter|friendlier|professional)|summari[sz]e briefly|title ideas?|extract|format)\b/i,
-  research: /\b(research|look (?:this|it) up|browse|search the web|current sources?|primary sources?|citations?|cite sources?|latest|most recent|today'?s?)\b/i,
+  research:
+    /\b(research|look (?:this|it) up|browse|search the web|current sources?|primary sources?|citations?|cite sources?|latest|most recent|today'?s?)\b/i,
   deep: /\b(deep(?:ly)?|exhaustive|comprehensive|audit|double[- ]check|verify|validate|prove|rigorous|subtle|edge cases?|root cause|threat model)\b/i,
   compare: /\b(compare|contrast|reconcile|differences?|trade[- ]offs?|alternatives?|competing approaches?)\b/i,
   plan: /\b(implementation plan|implementation|architecture|architect|design(?: an?| the)?|outline|roadmap|spec(?:ification)?|step[- ]by[- ]step)\b/i,
   code: /```|\b(code|debug|stack trace|exception|typescript|javascript|python|rust|react|api|sql|regex|function|class|repository|pull request|middleware|library|browser extension|software|security review|vulnerability|authentication|authorization|idempotency|concurrency)\b/i,
-  highStakes: /\b(legal|contracts?|medical|diagnosis|financial|securities|security|vulnerability|authentication|authorization|privacy|compliance)\b/i,
+  highStakes:
+    /\b(legal|contracts?|medical|diagnosis|financial|securities|security|vulnerability|authentication|authorization|privacy|compliance)\b/i,
   longOutput: /\b(detailed|thorough|long[- ]form|complete report|every|all possible)\b/i,
-  vague: /^(?:okay[,.]?\s*)?(?:do|redo|try|make|use|continue|fix)\s+(?:it|that|this)(?:\s+again)?\b|\b(?:same|other interpretation|previous version|like before)\b/i,
+  vague:
+    /^(?:okay[,.]?\s*)?(?:do|redo|try|make|use|continue|fix)\s+(?:it|that|this)(?:\s+again)?\b|\b(?:same|other interpretation|previous version|like before)\b/i,
   vision: /\b(image|photo|picture|screenshot|diagram|visual|chart)\b/i,
 };
 

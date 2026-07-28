@@ -1,40 +1,77 @@
 {
   "name": "switchboard-mcp",
-  "version": "0.5.0",
-  "private": true,
+  "version": "0.6.0",
+  "description": "Privacy-first local MCP server that recommends a model, quality tier, reasoning effort, and execution plan for an AI request before it runs.",
+  "keywords": [
+    "mcp",
+    "modelcontextprotocol",
+    "model-context-protocol",
+    "llm",
+    "routing",
+    "model-routing",
+    "llm-router",
+    "reasoning-effort",
+    "cost-optimization",
+    "privacy",
+    "local-first",
+    "claude",
+    "ai-agents"
+  ],
+  "license": "MIT",
+  "author": "zgbrenner",
+  "homepage": "https://github.com/zgbrenner/switchboard#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zgbrenner/switchboard.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zgbrenner/switchboard/issues"
+  },
+  "mcpName": "io.github.zgbrenner/switchboard",
   "type": "module",
-  "description": "Privacy-first local MCP server for AI request planning, model routing, diagnostics, evaluation, and aggregate preference learning.",
   "bin": {
     "switchboard-mcp": "mcp/index.mjs"
   },
+  "exports": {
+    ".": "./mcp/server.mjs",
+    "./router": "./dist/js/router/route.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "mcp/",
+    "dist/js/",
+    "server.json",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md",
+    "THIRD_PARTY_NOTICES.md"
+  ],
   "scripts": {
     "clean": "node scripts/clean.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "node scripts/test.mjs",
-    "models:fetch:core": "node scripts/fetch-models.mjs core",
-    "models:fetch:all": "node scripts/fetch-models.mjs all",
-    "models:fetch:judge": "node scripts/fetch-models.mjs judge",
-    "models:verify": "node scripts/verify-models.mjs",
     "build": "node scripts/build.mjs",
-    "build:extension": "node scripts/build-extension.mjs",
-    "verify": "npm run typecheck && npm test && npm run build && npm run mcp:smoke",
-    "verify:extension": "node scripts/verify-extension.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "biome lint .",
+    "format": "biome format --write . && biome check --write .",
+    "format:check": "biome format .",
+    "test": "node scripts/test.mjs",
+    "test:coverage": "node scripts/test.mjs --coverage",
     "benchmark": "node scripts/benchmark.mjs",
-    "verify:python": "python -m unittest discover -s training/tests -v && python -m compileall -q training",
-    "prepare:training": "python -m training.prepare_data",
-    "package": "npm run verify && node scripts/package-release.mjs",
+    "benchmark:oracle": "node scripts/benchmark-oracle.mjs",
+    "eval:fetch": "node scripts/fetch-oracle.mjs",
     "mcp:start": "node mcp/index.mjs --transport=stdio",
     "mcp:http": "node mcp/index.mjs --transport=http",
-    "mcp:smoke": "node scripts/mcp-smoke.mjs"
-  },
-  "dependencies": {
-    "@huggingface/transformers": "4.2.0"
-  },
-  "devDependencies": {
-    "esbuild": "0.28.1",
-    "typescript": "5.8.3"
+    "mcp:smoke": "node scripts/mcp-smoke.mjs",
+    "docs:generate": "node scripts/generate-docs.mjs",
+    "verify": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build && npm run mcp:smoke",
+    "prepack": "npm run build",
+    "prepublishOnly": "npm run verify"
   },
   "engines": {
     "node": ">=22"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.3.14",
+    "@types/node": "22.15.3",
+    "typescript": "5.8.3"
   }
 }

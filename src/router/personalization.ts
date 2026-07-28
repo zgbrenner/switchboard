@@ -1,5 +1,5 @@
-import { TIER_ORDER } from './policies.js';
 import type { QualityTier } from '../shared/types.js';
+import { TIER_ORDER } from './policies.js';
 
 export interface OverrideLearningEvent {
   recommended: QualityTier;
@@ -7,10 +7,7 @@ export interface OverrideLearningEvent {
   categories: string[];
 }
 
-export function applyOverrideLearning(
-  current: Readonly<Record<string, number>>,
-  event: OverrideLearningEvent,
-): Record<string, number> {
+export function applyOverrideLearning(current: Readonly<Record<string, number>>, event: OverrideLearningEvent): Record<string, number> {
   const next = { ...current };
   const delta = TIER_ORDER.indexOf(event.selected) - TIER_ORDER.indexOf(event.recommended);
   if (delta === 0) return next;

@@ -1,8 +1,32 @@
-import { ROUTE_PROTOTYPES, TIER_ORDER } from './policies.js';
 import type { QualityTier } from '../shared/types.js';
+import { ROUTE_PROTOTYPES, TIER_ORDER } from './policies.js';
 
 const STOP_WORDS = new Set([
-  'a','an','and','are','as','at','be','but','by','for','from','how','i','in','is','it','of','on','or','that','the','this','to','with','you'
+  'a',
+  'an',
+  'and',
+  'are',
+  'as',
+  'at',
+  'be',
+  'but',
+  'by',
+  'for',
+  'from',
+  'how',
+  'i',
+  'in',
+  'is',
+  'it',
+  'of',
+  'on',
+  'or',
+  'that',
+  'the',
+  'this',
+  'to',
+  'with',
+  'you',
 ]);
 
 function tokens(text: string): string[] {
