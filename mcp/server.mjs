@@ -1,6 +1,6 @@
 export { appendBrevityInstruction, BREVITY_LEVELS, BREVITY_MARKER } from './pipeline/brevity.mjs';
 export { chunkText, reassembleChunks } from './pipeline/chunking.mjs';
-export { PREPARE_INPUT_SCHEMA, PREPARE_OUTPUT_SCHEMA, normalizePrepareArguments } from './pipeline/contracts.mjs';
+export { normalizePrepareArguments, PREPARE_INPUT_SCHEMA, PREPARE_OUTPUT_SCHEMA } from './pipeline/contracts.mjs';
 export { convertAttachment } from './pipeline/files.mjs';
 export { prepareRequest } from './pipeline/prepare.mjs';
 export { compressChunks } from './pipeline/sidecar.mjs';
