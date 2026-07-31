@@ -3,6 +3,7 @@ import { applyProfileFloor, enhanceDecision } from '../enhance.mjs';
 import { evaluateRouter } from '../evaluation.mjs';
 import { normalizeOverrideArguments, OVERRIDE_INPUT_SCHEMA } from '../learning.mjs';
 import { resolveModelInventory } from '../models.mjs';
+import { normalizePrepareArguments, PREPARE_INPUT_SCHEMA, PREPARE_OUTPUT_SCHEMA, prepareRequest } from '../pipeline/index.mjs';
 import { ROUTE_OUTPUT_SCHEMA_V05 } from '../output-schema.mjs';
 import { applyProfile } from '../profiles.mjs';
 import {
@@ -24,6 +25,7 @@ import {
 } from '../tool-output-schemas.mjs';
 
 const READ_ONLY = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+const READ_LOCAL_PIPELINE = { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 const WRITE_AGGREGATE = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 const RESET_AGGREGATE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
 const EMPTY_INPUT_SCHEMA = { type: 'object', additionalProperties: false, properties: {} };
@@ -43,6 +45,15 @@ export function toolDefinitions() {
       inputSchema: ROUTE_INPUT_SCHEMA,
       outputSchema: ROUTE_OUTPUT_SCHEMA_V05,
       annotations: READ_ONLY,
+    },
+    {
+      name: 'prepare_request',
+      title: 'Prepare AI Request',
+      description:
+        'Run an independently configurable local preflight pipeline: route the original request, convert local files to Markdown, compress eligible text, and append reply-brevity steering.',
+      inputSchema: PREPARE_INPUT_SCHEMA,
+      outputSchema: PREPARE_OUTPUT_SCHEMA,
+      annotations: READ_LOCAL_PIPELINE,
     },
     {
       name: 'explain_route',
@@ -112,7 +123,7 @@ export function toolDefinitions() {
   ];
 }
 
-export function createToolDispatcher({ route, preferenceStore }) {
+export function createToolDispatcher({ route, preferenceStore, pipelineDependencies = {} }) {
   async function routeNormalized(normalized, { applyPreferences = true } = {}) {
     const applied = applyProfile(normalized.request, normalized.profile);
     const rawDecision = await route(applied.request);
@@ -137,6 +148,9 @@ export function createToolDispatcher({ route, preferenceStore }) {
 
   return async function callTool(name, args) {
     if (name === 'route_request') return await routeNormalized(normalizeRouteArguments(args));
+    if (name === 'prepare_request') {
+      return await prepareRequest(normalizePrepareArguments(args), { ...pipelineDependencies, route: routeNormalized });
+    }
     if (name === 'explain_route') return explainDecision(await routeNormalized(normalizeRouteArguments(args)));
     if (name === 'validate_model_inventory') return validateModelInventory(normalizeInventoryArguments(args).availableModels);
     if (name === 'compare_routes' || name === 'simulate_policy') {
