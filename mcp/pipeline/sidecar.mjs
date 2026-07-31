@@ -110,7 +110,9 @@ function normalizeSidecarResult(result, chunks) {
   return {
     chunks: normalized,
     model: typeof result.model === 'string' ? result.model : 'kompress-small-int8',
-    transforms: Array.isArray(result.transforms) ? result.transforms.filter((value) => typeof value === 'string') : ['model:kompress-small-int8'],
+    transforms: Array.isArray(result.transforms)
+      ? result.transforms.filter((value) => typeof value === 'string')
+      : ['model:kompress-small-int8'],
     warnings: Array.isArray(result.warnings) ? result.warnings.filter((value) => typeof value === 'string') : [],
     fallback: false,
   };
@@ -128,7 +130,9 @@ export async function compressChunks(chunks, options = {}) {
       return {
         ...fallback,
         fallback: true,
-        warnings: [`Quantized compressor unavailable; conservative fallback used: ${error instanceof Error ? error.message : String(error)}`],
+        warnings: [
+          `Quantized compressor unavailable; conservative fallback used: ${error instanceof Error ? error.message : String(error)}`,
+        ],
       };
     }
   }

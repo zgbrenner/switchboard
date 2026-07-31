@@ -101,11 +101,9 @@ function delimitedToMarkdown(text, separator) {
   const normalized = rows.map((row) => Array.from({ length: width }, (_, index) => tableCell(row[index] ?? '')));
   const header = normalized[0] ?? Array.from({ length: width }, () => '');
   const body = normalized.slice(1);
-  return [
-    `| ${header.join(' | ')} |`,
-    `| ${header.map(() => '---').join(' | ')} |`,
-    ...body.map((row) => `| ${row.join(' | ')} |`),
-  ].join('\n');
+  return [`| ${header.join(' | ')} |`, `| ${header.map(() => '---').join(' | ')} |`, ...body.map((row) => `| ${row.join(' | ')} |`)].join(
+    '\n',
+  );
 }
 
 const ENTITY_MAP = Object.freeze({ amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ' });
@@ -136,7 +134,10 @@ function htmlToMarkdown(html) {
   output = output.replace(/<\/?(?:p|div|section|article|header|footer|main|aside|ul|ol|table|tr)\b[^>]*>/giu, '\n');
   output = output.replace(/<[^>]+>/gu, '');
   output = decodeEntities(output);
-  return output.replace(/[ \t]+\n/gu, '\n').replace(/\n{3,}/gu, '\n\n').trim();
+  return output
+    .replace(/[ \t]+\n/gu, '\n')
+    .replace(/\n{3,}/gu, '\n\n')
+    .trim();
 }
 
 function notebookToMarkdown(text) {

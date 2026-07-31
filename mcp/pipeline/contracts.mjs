@@ -2,7 +2,16 @@ import { ROUTE_OUTPUT_SCHEMA_V05 } from '../output-schema.mjs';
 import { JSON_SCHEMA } from '../schema/constants.mjs';
 import { ROUTE_INPUT_SCHEMA } from '../schema/contracts.mjs';
 import { normalizeRouteArguments } from '../schema/normalize.mjs';
-import { enumValue, exactKeys, integer, numberValue, object, optionalBoolean, stringValue, ValidationError } from '../schema/validators.mjs';
+import {
+  enumValue,
+  exactKeys,
+  integer,
+  numberValue,
+  object,
+  optionalBoolean,
+  stringValue,
+  ValidationError,
+} from '../schema/validators.mjs';
 import { BREVITY_LEVELS } from './brevity.mjs';
 
 const ROUTE_KEYS = Object.freeze(Object.keys(ROUTE_INPUT_SCHEMA.properties));
@@ -38,7 +47,8 @@ const attachmentSchema = {
 const compressionSchema = {
   type: 'object',
   additionalProperties: false,
-  description: 'Local compression controls. Auto uses the quantized model when available and a conservative deterministic fallback otherwise.',
+  description:
+    'Local compression controls. Auto uses the quantized model when available and a conservative deterministic fallback otherwise.',
   properties: {
     mode: { type: 'string', enum: COMPRESSION_MODES, default: 'auto' },
     minimumCharacters: { type: 'integer', minimum: 1, maximum: 64_000, default: 1 },
@@ -95,7 +105,17 @@ export const PREPARE_OUTPUT_SCHEMA = {
   $schema: JSON_SCHEMA,
   type: 'object',
   additionalProperties: false,
-  required: ['pipelineVersion', 'features', 'route', 'preparedPrompt', 'convertedAttachments', 'stages', 'warnings', 'transforms', 'receipt'],
+  required: [
+    'pipelineVersion',
+    'features',
+    'route',
+    'preparedPrompt',
+    'convertedAttachments',
+    'stages',
+    'warnings',
+    'transforms',
+    'receipt',
+  ],
   properties: {
     pipelineVersion: { type: 'string', const: '2026-07-31' },
     features: featureOutputSchema,
@@ -258,7 +278,11 @@ function normalizeCompression(value) {
     return { mode: 'auto', minimumCharacters: 1, maxChunkCharacters: 6_000, minimumSavingsRatio: 0.01, threshold: 0, timeoutMs: 15_000 };
   }
   const compression = object(value, 'compression');
-  exactKeys(compression, ['mode', 'minimumCharacters', 'maxChunkCharacters', 'minimumSavingsRatio', 'threshold', 'timeoutMs'], 'compression');
+  exactKeys(
+    compression,
+    ['mode', 'minimumCharacters', 'maxChunkCharacters', 'minimumSavingsRatio', 'threshold', 'timeoutMs'],
+    'compression',
+  );
   return {
     mode: enumValue(compression.mode, COMPRESSION_MODES, 'compression.mode', 'auto'),
     minimumCharacters:
@@ -273,8 +297,7 @@ function normalizeCompression(value) {
       compression.minimumSavingsRatio === undefined
         ? 0.01
         : numberValue(compression.minimumSavingsRatio, 'compression.minimumSavingsRatio', { min: 0, max: 0.95 }),
-    threshold:
-      compression.threshold === undefined ? 0 : numberValue(compression.threshold, 'compression.threshold', { min: -5, max: 5 }),
+    threshold: compression.threshold === undefined ? 0 : numberValue(compression.threshold, 'compression.threshold', { min: -5, max: 5 }),
     timeoutMs:
       compression.timeoutMs === undefined ? 15_000 : integer(compression.timeoutMs, 'compression.timeoutMs', { min: 250, max: 120_000 }),
   };
