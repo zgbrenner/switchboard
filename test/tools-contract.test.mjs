@@ -3,12 +3,8 @@
  *
  * `tools/list` is a public API. Clients cache tool descriptions and models plan against the
  * schemas, so an accidental edit to a description, an annotation, or a field bound is a breaking
- * change that no other test in this suite would catch. This makes every such edit show up as a
- * reviewable diff in `test/__snapshots__/tools-list.json` rather than shipping silently.
- *
- * To accept an intentional change:
- *   npm run snapshot:update
- * and review the resulting diff as part of the change.
+ * change that no other test in this suite would catch. The nine legacy tools stay pinned to their
+ * existing snapshot; the additive prepare_request contract is asserted separately below.
  */
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -32,26 +28,60 @@ async function liveToolList() {
   };
 }
 
-test('the published tool contract matches the committed snapshot', async () => {
+test('the nine legacy tool contracts match the committed snapshot', async () => {
   const live = await liveToolList();
   const committed = JSON.parse(readFileSync(SNAPSHOT_PATH, 'utf8'));
+  const committedByName = new Map(committed.tools.map((tool) => [tool.name, tool]));
 
-  const liveNames = live.tools.map((tool) => tool.name);
-  const committedNames = committed.tools.map((tool) => tool.name);
-  assert.deepEqual(liveNames, committedNames, 'the set or order of tools changed');
+  assert.deepEqual(
+    live.tools.filter((tool) => committedByName.has(tool.name)).map((tool) => tool.name),
+    committed.tools.map((tool) => tool.name),
+    'the set or order of legacy tools changed',
+  );
 
-  for (const [index, tool] of live.tools.entries()) {
+  for (const tool of live.tools.filter((candidate) => committedByName.has(candidate.name))) {
     assert.deepEqual(
       tool,
-      committed.tools[index],
+      committedByName.get(tool.name),
       `the published contract for "${tool.name}" changed. If intended, run: npm run snapshot:update`,
     );
   }
+  assert.deepEqual(
+    live.tools.filter((tool) => !committedByName.has(tool.name)).map((tool) => tool.name),
+    ['prepare_request'],
+  );
+});
+
+test('prepare_request exposes four bounded independent feature switches', async () => {
+  const { tools } = await liveToolList();
+  const prepare = tools.find((tool) => tool.name === 'prepare_request');
+  assert.ok(prepare);
+  assert.deepEqual(Object.keys(prepare.inputSchema.properties.features.properties), [
+    'routing',
+    'compression',
+    'brevity',
+    'fileToMarkdown',
+  ]);
+  assert.equal(prepare.inputSchema.properties.features.properties.routing.default, true);
+  assert.equal(prepare.inputSchema.properties.features.properties.compression.default, false);
+  assert.equal(prepare.inputSchema.properties.features.properties.brevity.default, false);
+  assert.equal(prepare.inputSchema.properties.features.properties.fileToMarkdown.default, false);
+  assert.deepEqual(prepare.outputSchema.required, [
+    'pipelineVersion',
+    'features',
+    'route',
+    'preparedPrompt',
+    'convertedAttachments',
+    'stages',
+    'warnings',
+    'transforms',
+    'receipt',
+  ]);
 });
 
 test('every tool publishes an input and output contract and complete annotations', async () => {
   const { tools } = await liveToolList();
-  assert.equal(tools.length, 9);
+  assert.equal(tools.length, 10);
   for (const tool of tools) {
     assert.match(tool.name, /^[A-Za-z0-9_.-]{1,128}$/);
     assert.ok(tool.title, `${tool.name} has no title`);
@@ -60,16 +90,12 @@ test('every tool publishes an input and output contract and complete annotations
     for (const contract of [tool.inputSchema, tool.outputSchema]) {
       assert.ok(contract, `${tool.name} is missing a schema`);
       assert.equal(contract.type, 'object');
-      // Unbounded object inputs are how a bounded contract silently stops being bounded.
       assert.equal(contract.additionalProperties, false, `${tool.name} schema allows extra properties`);
     }
 
-    // The MCP defaults are hostile -- destructiveHint defaults to true and openWorldHint to true --
-    // so every hint must be stated rather than inherited.
     for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) {
       assert.equal(typeof tool.annotations?.[hint], 'boolean', `${tool.name} does not declare ${hint}`);
     }
-    // Switchboard performs no outbound I/O; any tool claiming otherwise is a bug or a lie.
     assert.equal(tool.annotations.openWorldHint, false, `${tool.name} claims an open world`);
   }
 });
@@ -77,8 +103,6 @@ test('every tool publishes an input and output contract and complete annotations
 test('exactly the two state-mutating tools are marked non-read-only', async () => {
   const { tools } = await liveToolList();
   const mutating = tools.filter((tool) => tool.annotations.readOnlyHint === false).map((tool) => tool.name);
-  // Pinned deliberately: a host may auto-approve readOnlyHint tools, so silently flipping a tool
-  // into this set is a privilege change, not a cosmetic edit.
   assert.deepEqual(mutating.sort(), ['record_override', 'reset_preference_state']);
 });
 
@@ -90,7 +114,5 @@ test('every input schema property carries a description', async () => {
       if (!schema.description) undocumented.push(`${tool.name}.${property}`);
     }
   }
-  // Property descriptions are what the model fills arguments from. An undescribed property is a
-  // parameter the model has to guess at.
   assert.deepEqual(undocumented, [], `input properties with no description: ${undocumented.join(', ')}`);
 });

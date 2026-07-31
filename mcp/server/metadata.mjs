@@ -4,10 +4,10 @@ export const CURRENT_PROTOCOL_VERSION = '2025-11-25';
 export const SUPPORTED_PROTOCOL_VERSIONS = new Set(['2025-11-25', '2025-06-18', '2025-03-26']);
 export const SERVER_INFO = {
   name: 'switchboard',
-  title: 'Switchboard Router',
-  version: '0.5.0',
+  title: 'Switchboard Request Preflight',
+  version: '0.7.0',
   description:
-    'Local privacy-first request planning, model routing, diagnostics, evaluation, and aggregate preference learning for AI hosts.',
+    'Local privacy-first request routing, prompt compression, reply-brevity steering, file-to-Markdown conversion, diagnostics, and evaluation for AI hosts.',
   websiteUrl: 'https://github.com/zgbrenner/switchboard',
 };
 
@@ -42,6 +42,29 @@ export const ADAPTER_CONTRACT = {
   fields: ['id', 'title', 'family', 'tier', 'effortLevels', 'capabilities', 'relativeCost', 'relativeLatency', 'available'],
 };
 
+export const PIPELINE_METADATA = {
+  version: '2026-07-31',
+  order: ['routing', 'fileToMarkdown', 'compression', 'brevity'],
+  defaults: { routing: true, compression: false, brevity: false, fileToMarkdown: false },
+  compressor: {
+    preferredModel: 'chopratejas/kompress-small',
+    runtime: 'local-onnx-int8-sidecar',
+    fallback: 'lossless deterministic phrase compaction',
+    bypassesShortInputs: true,
+    preservesProtectedCodeFences: true,
+  },
+  fileConversion: {
+    runtime: 'local MarkItDown-compatible sidecar with built-in text converters',
+    remoteUrls: false,
+    rootRestrictedByDefault: true,
+  },
+  brevity: {
+    levels: ['brief', 'concise', 'minimal'],
+    appendedLast: true,
+    idempotent: true,
+  },
+};
+
 export const SERVER_METADATA = {
   server: SERVER_INFO,
   api: API_METADATA,
@@ -49,6 +72,7 @@ export const SERVER_METADATA = {
   transports: ['stdio', 'streamable-http'],
   tools: [
     'route_request',
+    'prepare_request',
     'explain_route',
     'compare_routes',
     'simulate_policy',
@@ -59,8 +83,12 @@ export const SERVER_METADATA = {
     'reset_preference_state',
   ],
   adapterContract: ADAPTER_CONTRACT,
+  pipeline: PIPELINE_METADATA,
   privacy: {
     localRouting: true,
+    localCompression: true,
+    localFileConversion: true,
+    followsRemoteFileUrls: false,
     persistsPrompts: false,
     persistsContext: false,
     persistsFileExcerpts: false,
