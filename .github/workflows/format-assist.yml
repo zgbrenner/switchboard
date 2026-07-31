@@ -3,6 +3,7 @@ name: Format Assist
 on:
   push:
     branches: [feat/configurable-request-pipeline]
+  pull_request:
 
 permissions:
   contents: read
