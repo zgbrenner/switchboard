@@ -24,8 +24,5 @@ test('JSON is normalized inside a fenced block', async () => {
 });
 
 test('remote URLs are rejected rather than fetched', async () => {
-  await assert.rejects(
-    () => convertAttachment({ name: 'remote.pdf', path: 'https://example.com/remote.pdf' }),
-    /local path/,
-  );
+  await assert.rejects(() => convertAttachment({ name: 'remote.pdf', path: 'https://example.com/remote.pdf' }), /local path/);
 });
