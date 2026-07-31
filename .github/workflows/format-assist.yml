@@ -1,0 +1,31 @@
+name: Format Assist
+
+on:
+  push:
+    branches: [feat/configurable-request-pipeline]
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run format
+      - uses: actions/upload-artifact@v4
+        with:
+          name: formatted-source
+          path: |
+            mcp/
+            scripts/
+            test/
+            package.json
+            server.json
+          if-no-files-found: error
+          retention-days: 1
