@@ -40,15 +40,15 @@ test('the pipeline routes the original request before conversion or compression'
   });
 
   const result = await prepareRequest(normalized, {
-    route: async (routeArguments) => {
+    route: (routeArguments) => {
       calls.push(['route', routeArguments.request.prompt]);
       return { tier: 'balanced', effort: 'medium' };
     },
-    convertAttachment: async () => {
+    convertAttachment: () => {
       calls.push(['convert']);
       return { name: 'agreement.txt', mediaType: 'text/plain', markdown: 'The agreement renews automatically every year.', warnings: [] };
     },
-    compressChunks: async (chunks) => {
+    compressChunks: (chunks) => {
       calls.push(['compress']);
       return {
         chunks: chunks.map((chunk) => ({ ...chunk, text: chunk.text.replaceAll('very ', '') })),
@@ -71,7 +71,7 @@ test('each feature can be disabled independently', async () => {
     prompt: 'Keep this unchanged.',
     features: { routing: false, compression: false, brevity: false, fileToMarkdown: false },
   });
-  const unexpected = async () => {
+  const unexpected = () => {
     throw new Error('disabled dependency was called');
   };
   const result = await prepareRequest(normalized, {
@@ -92,7 +92,7 @@ test('compression failure is lossless and visible', async () => {
     compression: { minimumCharacters: 1 },
   });
   const result = await prepareRequest(normalized, {
-    compressChunks: async () => {
+    compressChunks: () => {
       throw new Error('sidecar unavailable');
     },
   });
