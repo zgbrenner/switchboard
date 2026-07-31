@@ -24,11 +24,16 @@ test('brevity steering is appended at the end and is idempotent', () => {
 });
 
 test('chunking preserves the source exactly before compression', () => {
-  const source = ['# Heading', '', 'First paragraph. '.repeat(120), '', '```ts', 'const value = 1;', '```', '', 'Last paragraph.'].join('\n');
+  const source = ['# Heading', '', 'First paragraph. '.repeat(120), '', '```ts', 'const value = 1;', '```', '', 'Last paragraph.'].join(
+    '\n',
+  );
   const chunks = chunkText(source, { maxCharacters: 300 });
   assert.ok(chunks.length > 2);
   assert.equal(reassembleChunks(chunks), source);
-  assert.equal(chunks.some((chunk) => chunk.protected), true);
+  assert.equal(
+    chunks.some((chunk) => chunk.protected),
+    true,
+  );
 });
 
 test('the pipeline routes the original request before conversion or compression', async () => {
@@ -36,7 +41,9 @@ test('the pipeline routes the original request before conversion or compression'
   const normalized = normalizePrepareArguments({
     prompt: 'Please provide a very detailed explanation of the attached agreement.',
     features: { routing: true, compression: true, brevity: true, fileToMarkdown: true },
-    attachments: [{ name: 'agreement.txt', contentBase64: Buffer.from('The agreement renews automatically every year.').toString('base64') }],
+    attachments: [
+      { name: 'agreement.txt', contentBase64: Buffer.from('The agreement renews automatically every year.').toString('base64') },
+    ],
   });
 
   const result = await prepareRequest(normalized, {
@@ -58,7 +65,10 @@ test('the pipeline routes the original request before conversion or compression'
     },
   });
 
-  assert.deepEqual(calls.map(([name]) => name), ['route', 'convert', 'compress']);
+  assert.deepEqual(
+    calls.map(([name]) => name),
+    ['route', 'convert', 'compress'],
+  );
   assert.equal(calls[0][1], normalized.route.request.prompt);
   assert.equal(result.route.tier, 'balanced');
   assert.match(result.preparedPrompt, /agreement renews automatically/);
