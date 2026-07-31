@@ -7,5 +7,9 @@ if (compile.status !== 0) process.exit(compile.status ?? 1);
 const tests = spawnSync(process.execPath, ['--test', 'test/*.test.mjs'], {
   stdio: 'inherit',
   shell: true,
+  env: {
+    ...process.env,
+    SWITCHBOARD_ROUTER_MODULE: '.test-dist/js/router/route.js',
+  },
 });
 process.exit(tests.status ?? 1);
