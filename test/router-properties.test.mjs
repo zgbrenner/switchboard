@@ -217,6 +217,58 @@ test('idiomatic uses of vision-adjacent words do not falsely require vision capa
   }
 });
 
+test('research mentioned as a pre-existing activity does not falsely require web capability', () => {
+  // Bare 'research' is an instruction to go look something up when it is the sentence's own verb
+  // ("Research the latest ...", "Research quantum computing breakthroughs" -- note no determiner
+  // after it in that second example, a very common phrasing that a determiner-requiring fix would
+  // silently miss). It is also an ordinary noun describing an activity happening elsewhere ("doing
+  // research for my thesis", "market research"), which asks nothing of this assistant and must not
+  // require web access.
+  const selfDescriptive = [
+    "I'm doing research for my thesis on 19th century poetry.",
+    'My research on medieval trade routes has been going well.',
+    'She spent all year on market research for the new product line.',
+    'Her research indicates a strong correlation between the two variables.',
+    'According to recent research, sleep affects long-term memory.',
+  ];
+  for (const prompt of selfDescriptive) {
+    const decision = route(prompt);
+    assert.equal(decision.capabilities.web, false, `false-positive web capability for: ${prompt}`);
+    assert.ok(!decision.taskCategories.includes('research'), `false-positive research category for: ${prompt}`);
+  }
+  const genuine = [
+    'Research the latest browser extension security guidance and cite sources.',
+    'Research this topic before we proceed.',
+    'Research what changed in the new regulation.',
+    'Research quantum computing breakthroughs from the last year.',
+    'Please research renewable energy trends.',
+  ];
+  for (const prompt of genuine) {
+    const decision = route(prompt);
+    assert.equal(decision.capabilities.web, true, `missed genuine research request for: ${prompt}`);
+  }
+});
+
+test('the frequency idiom "every morning/day/etc." does not falsely signal exhaustive output coverage', () => {
+  // Bare 'every' also matches ordinary recurring-time idioms with no coverage implication
+  // ("every morning" means "each instance of a recurring time", not "comprehensive scope"). Only
+  // phrasings that actually signal exhaustive scope should count, mirroring the existing 'all
+  // possible' sibling.
+  const frequencyIdioms = ['Remind me to stretch every morning.', 'I take my medication every day at 8am.'];
+  for (const prompt of frequencyIdioms) {
+    const decision = route(prompt);
+    assert.ok(!decision.reasons.some((reason) => reason.code === 'high-coverage'), `false-positive high-coverage for: ${prompt}`);
+  }
+  const genuine = ['Explain every possible failure mode in this design.', 'List every single requirement from the spec.'];
+  for (const prompt of genuine) {
+    const decision = route(prompt);
+    assert.ok(
+      decision.reasons.some((reason) => reason.code === 'high-coverage'),
+      `missed genuine exhaustive-scope request for: ${prompt}`,
+    );
+  }
+});
+
 test('keyword-flip stability: injecting trigger words into an unchanged task rarely changes the decision', () => {
   // Semantically null suffixes that contain high-weight trigger vocabulary. The task is identical;
   // only the wording changes. A router that flips on these is matching words, not difficulty.
