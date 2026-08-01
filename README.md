@@ -307,7 +307,9 @@ Measured consequences, from `npm run benchmark:oracle`:
 - The signals are **English-only**. Other scripts are detected and held at a `balanced` floor with a
   judge requested, rather than guessed at — but they are not really routed.
 - `confidence` is an **evidence score, not a calibrated probability**. Do not threshold on it as if
-  it were one.
+  it were one — it can score a keyword-avoidant, wrongly-undertriaged request *higher* than the same
+  scenario phrased with an explicit high-stakes keyword, because it measures how much evidence fired,
+  not whether the routing decision was correct.
 - The **reasoning-effort axis is unevaluated** against measured outcomes; no public dataset labels it.
 
 The oracle on that same corpus reaches 99.6% at 1/400th the cost of always-max, so the headroom for

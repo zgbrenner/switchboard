@@ -249,6 +249,31 @@ test('aggregate learning cannot downgrade a context-complexity floor even with n
   assert.equal(routed.result.structuredContent.learningAdjustment.reason, 'downward-safety-floor');
 });
 
+test('aggregate learning cannot downgrade the non-Latin-script floor', async () => {
+  // route.ts holds a 'balanced' floor for scripts the keyword signals cannot read (unreadableScript),
+  // tagged with the 'unknown-language' category and no capability set -- specifically so a non-English
+  // request is never silently routed as if it were trivial. The learning guard has to recognize this
+  // floor too, or enough recorded downgrades erase the exact protection it exists to provide.
+  const store = new AggregatePreferenceStore();
+  for (let index = 0; index < 4; index += 1) {
+    await store.record({ categories: ['unknown-language'], recommendedTier: 'balanced', selectedTier: 'fast' });
+  }
+  const value = await session(
+    async () =>
+      baseDecision({
+        tier: 'balanced',
+        effort: 'medium',
+        taskCategories: ['unknown-language'],
+        capabilities: { web: false, files: false, vision: false, longContext: false, code: false },
+      }),
+    store,
+  );
+  const routed = await tool(value, 2, 'route_request', { prompt: '这是一个关于系统架构的复杂问题' });
+  assert.equal(routed.result.structuredContent.tier, 'balanced');
+  assert.equal(routed.result.structuredContent.learningAdjustment.applied, false);
+  assert.equal(routed.result.structuredContent.learningAdjustment.reason, 'downward-safety-floor');
+});
+
 test('record_override rejects raw prompt fields and strict bounds reject invalid inputs', async () => {
   const value = await session();
   const raw = await tool(value, 2, 'record_override', {

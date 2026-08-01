@@ -2,14 +2,24 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 const TIERS = ['fast', 'balanced', 'deep', 'max'];
-// Mirrors every category route.ts's context-complexity-floor treats as floor-worthy
-// (src/router/route.ts, the `context-complexity-floor` reason), plus the additional domains below.
-// A learned downgrade must never bypass a floor the router itself deliberately raised, so this set
-// has to be a superset of that list -- 'comparison' and 'reasoning' were previously missing, which
-// let enough downgrade overrides erase a context-complexity-floor route (e.g. a short vague
-// follow-up to a comparison/reasoning task) down to 'balanced' or lower.
-const HIGH_STAKES = new Set(['high-stakes', 'legal', 'security', 'medical', 'finance', 'comparison', 'reasoning']);
+// Every category that corresponds to a floor route.ts raises WITHOUT also setting a hard
+// capability (src/router/route.ts): the context-complexity-floor's 'comparison'/'reasoning', and
+// the non-Latin-script floor's 'unknown-language'. A learned downgrade must never bypass a floor the
+// router itself deliberately raised, so this set has to be a superset of that list. 'comparison' and
+// 'reasoning' were previously missing, letting enough downgrade overrides erase a
+// context-complexity-floor route down to 'balanced' or lower; 'unknown-language' had the same gap,
+// letting learning erase the floor that keeps a script the keyword signals cannot read from being
+// silently routed as if it were trivial.
+const HIGH_STAKES = new Set(['high-stakes', 'legal', 'security', 'medical', 'finance', 'comparison', 'reasoning', 'unknown-language']);
 const MAX_STATE_BYTES = 1_048_576;
+// `load()` rejects a state file over MAX_STATE_BYTES, but nothing previously capped how many
+// *distinct* category keys `record()` could accumulate over time -- each call only bounds its own
+// 1-16 categories per request, not the running total. A caller (malicious or just careless with
+// category naming) could grow the file past MAX_STATE_BYTES this way, and every subsequent load --
+// including `apply()`, which `route_request` calls on every invocation when preferences are shared
+// -- would then throw, breaking routing itself for every session sharing that state file. At ~40
+// bytes per category name, this cap keeps the file comfortably under a quarter of the byte limit.
+const MAX_DISTINCT_CATEGORIES = 2_000;
 const persistentStores = new Map();
 
 function clamp(value, min, max) {
@@ -100,10 +110,24 @@ export class AggregatePreferenceStore {
     if (!this.path) return;
     await mkdir(dirname(this.path), { recursive: true });
     const temporary = `${this.path}.${process.pid}.${Date.now()}.tmp`;
-    await writeFile(temporary, `${JSON.stringify(this.state, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
-    await rename(temporary, this.path);
+    try {
+      await writeFile(temporary, `${JSON.stringify(this.state, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+      await rename(temporary, this.path);
+    } catch (error) {
+      // Clean up the orphaned temp file rather than leaving it behind on every transient failure
+      // (a full disk, a permission error, a concurrent writer) -- best-effort, the original error is
+      // what matters to the caller.
+      await rm(temporary, { force: true }).catch(() => {});
+      throw error;
+    }
   }
 
+  // `this.queue` exists purely to serialize writes in order; it must never itself become a
+  // permanently rejected promise, or every future call chained onto it (record, reset, snapshot,
+  // apply) would fail forever with the *original* error, even with no further contention -- only a
+  // process restart would recover. Chaining `.catch(() => {})` onto the tracked queue promise keeps
+  // it settled-and-resolved regardless of outcome, while `operation` (unwrapped) still carries the
+  // real result/error back to this specific call's caller.
   async record({ categories, recommendedTier, selectedTier }) {
     await this.load();
     const delta = tierIndex(selectedTier) - tierIndex(recommendedTier);
@@ -111,21 +135,27 @@ export class AggregatePreferenceStore {
       await this.queue;
       return publicState(this.state, Boolean(this.path));
     }
-    this.queue = this.queue.then(async () => {
+    const operation = this.queue.then(async () => {
       const direction = Math.sign(delta);
       for (const category of categories) {
-        const current = this.state.categories[category] ?? { bias: 0, overrides: 0, upgrades: 0, downgrades: 0 };
-        current.bias = Math.round(clamp(current.bias * 0.9 + direction * 0.1, -0.35, 0.35) * 1000) / 1000;
-        current.overrides += 1;
-        if (direction > 0) current.upgrades += 1;
-        else current.downgrades += 1;
-        this.state.categories[category] = current;
+        const current = this.state.categories[category];
+        // Once at the cap, keep updating categories already being tracked, but stop admitting brand
+        // new ones -- silently, the same way an invalid persisted entry is silently dropped in
+        // validateState, rather than failing the whole override.
+        if (!current && Object.keys(this.state.categories).length >= MAX_DISTINCT_CATEGORIES) continue;
+        const next = current ?? { bias: 0, overrides: 0, upgrades: 0, downgrades: 0 };
+        next.bias = Math.round(clamp(next.bias * 0.9 + direction * 0.1, -0.35, 0.35) * 1000) / 1000;
+        next.overrides += 1;
+        if (direction > 0) next.upgrades += 1;
+        else next.downgrades += 1;
+        this.state.categories[category] = next;
       }
       this.state.totalOverrides += 1;
       this.state.updatedAt = new Date().toISOString();
       await this.persist();
     });
-    await this.queue;
+    this.queue = operation.catch(() => {});
+    await operation;
     return publicState(this.state, Boolean(this.path));
   }
 
@@ -137,11 +167,12 @@ export class AggregatePreferenceStore {
 
   async reset() {
     await this.load();
-    this.queue = this.queue.then(async () => {
+    const operation = this.queue.then(async () => {
       this.state = emptyState();
       if (this.path) await rm(this.path, { force: true });
     });
-    await this.queue;
+    this.queue = operation.catch(() => {});
+    await operation;
     return publicState(this.state, Boolean(this.path));
   }
 

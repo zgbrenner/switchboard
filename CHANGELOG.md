@@ -45,6 +45,14 @@ actually pass on a clean checkout.
   the README asks users to trust as deterministic and tested. `class` and `function` are no longer
   matched as bare words; real code requests still fire through `code` itself, a language name, a
   fenced block, or another technical term in the pattern.
+- **The `code` capability also fired on "react" as a bare word** ("how should I react to my
+  coworker's comment?"), the same class of false positive as `class`/`function` above. `react`
+  requests still fire through `javascript`/`typescript`/`code` itself/a fenced block, which a genuine
+  question about the framework almost always includes.
+- **The `vision` capability fired on the idioms "picture this" and "chart out."** Unlike
+  `class`/`function`/`react`, `picture` and `chart` have a real, common single-word vision use
+  ("what's in this picture", "explain this chart"), so rather than dropping them as bare words, only
+  the specific idiomatic phrasing is now excluded.
 - **Aggregate learning could erase a context-complexity floor.** `route.ts`'s
   `context-complexity-floor` raises the floor to `deep` for `comparison` and `reasoning` categories
   alone (a short, vague follow-up to a task that needed deep reasoning), but the learning-layer
@@ -53,6 +61,42 @@ actually pass on a clean checkout.
   capability, so recorded downgrade overrides could — and, reproducibly, did — push a
   floor-protected route down to `balanced` or lower. The guard's category set now matches every
   category `context-complexity-floor` treats as floor-worthy.
+- **Aggregate learning could erase the non-Latin-script floor.** The same gap as above, for the
+  `unreadableScript` floor (`unknown-language` category): a non-English request correctly held at
+  `balanced` could be learned back down to `fast`, undermining the exact protection added in 0.6.0
+  to stop non-English prompts being silently routed as if they were trivial.
+
+### Fixed — reliability
+
+- **`record_override` could permanently wedge after a single transient write failure.**
+  `AggregatePreferenceStore` serializes writes by chaining `.then()` calls onto a tracked queue
+  promise; chaining onto an already-rejected promise just re-propagates that rejection forever, so
+  one transient failure (a full disk, a concurrent writer, any I/O hiccup) poisoned every future
+  `record`/`reset`/`snapshot`/`apply` call on that store — permanently, with no further contention at
+  all, recoverable only by restarting the process. The queue's own serialization point now always
+  settles to resolved regardless of outcome, while each call still observes its own real result.
+- **No cap on the number of distinct learned categories.** Each `record_override` call bounds its own
+  1–16 categories, but nothing capped how many distinct category keys could accumulate over time.
+  Left unbounded, this can grow the persisted state file past its own 1 MiB read limit — and every
+  subsequent load, including `apply()`, which `route_request` calls on every invocation when
+  preferences are shared, would then throw, breaking routing itself for every session sharing that
+  state file. Capped at 2,000 distinct categories, comfortably under a quarter of the byte limit.
+- **`persist()` leaked its temp file on a failed write.** The atomic write-then-rename left an orphaned
+  `.tmp` file behind on any failure instead of cleaning it up.
+
+### Removed
+
+- **`src/router/personalization.ts`**, an orphaned override-learning implementation never imported by
+  any runtime path — the live implementation is `mcp/learning.mjs`'s `AggregatePreferenceStore`,
+  which has its own, different bias-clamping bounds. Kept only its own test, which risked misleading
+  a future reader into thinking it was live or into wiring it in alongside the real implementation.
+
+### Changed — performance
+
+- **`semanticRouteScores` re-tokenized the four constant tier-prototype strings on every single
+  `routeRequest` call.** Precomputing them once at module load measured a 52% reduction in this
+  function's own cost and a 33% reduction in `routeRequest`'s end-to-end latency (front-loaded the
+  same fix for the input text's own vector norm, recomputed once per call instead of once per tier).
 
 ### Fixed — pipeline
 
@@ -91,6 +135,10 @@ actually pass on a clean checkout.
   at version `0.6.0`. Added a tool-surface section and bumped the header to `0.7.0`.
 - **README undercounted the tool surface** ("nine tools", "the other eight tools", missing
   `prepare_request` from the Tools table) after the same tool was added.
+- **The Honest limitations section didn't disclose that `confidence` can invert.** A keyword-avoidant
+  request that happens to under-route can score *higher* confidence than the same scenario phrased
+  with an explicit high-stakes keyword, since the score measures how much evidence fired, not whether
+  the decision was correct. Documented alongside the existing "not a calibrated probability" caveat.
 
 ## [0.6.0] — 2026-07-28
 
