@@ -3,6 +3,95 @@
 All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] — 2026-07-31
+
+A request-preparation release, plus a verification pass that found the release process itself had
+drifted: the server had been bumped to 0.7.0 internally without the package, the registry manifest,
+or this changelog following, and `npm run verify` — the project's own mandatory gate — did not
+actually pass on a clean checkout.
+
+### Added
+
+- **`prepare_request`**, a configurable preflight pipeline with four independently toggleable
+  stages, always applied in order: routing, file-to-Markdown conversion, local prompt compression
+  (ONNX sidecar with a deterministic lossless fallback), and reply-brevity steering.
+
+### Fixed — release process
+
+- **`package.json`, `server.json`, and `package-lock.json` still said `0.6.0`** while
+  `mcp/server/metadata.mjs` reported `SERVER_INFO.version: '0.7.0'` to every MCP client. A published
+  package would have described itself two different ways depending on which field a caller read.
+  All four are now `0.7.0`.
+- **`npm test` and `npm run build` crashed with `ENOENT` on Windows.** Both spawned `tsc` as a bare
+  command without a shell, which Windows cannot execute directly (it is a `.cmd` shim). Fixed by
+  invoking `node_modules/typescript/bin/tsc` directly through `process.execPath`, which needs no
+  shell and has no quoting hazards — the same fix applied to `scripts/benchmark.mjs` and
+  `scripts/benchmark-oracle.mjs`.
+- **`scripts/test.mjs` pointed `SWITCHBOARD_ROUTER_MODULE` at a path that never existed**
+  (`.test-dist/js/router/route.js` instead of the actual compiled `.test-dist/router/route.js`),
+  silently failing any test file that imports `mcp/server.mjs` without overriding the variable
+  itself. Two test files (`mcp-protocol-errors`, `tools-contract`) could not run at all as a result.
+- **Five test files still asserted the 0.5-era server identity** (`serverInfo.version === '0.5.0'`,
+  a 9-tool surface missing `prepare_request`) after the version and tool-list bump, so
+  `npm run verify` failed out of the box on a fresh clone. Assertions updated to match the current
+  contract.
+
+### Fixed — routing
+
+- **The `code` capability fired on ordinary English words.** `class` and `function` matched as bare
+  words in the capability pattern, so prompts like "Explain the legal class action settlement
+  process" or "Describe the function of the judiciary" were flagged as requiring a code-capable
+  model with no programming content anywhere in the request. This is exactly the half of Switchboard
+  the README asks users to trust as deterministic and tested. `class` and `function` are no longer
+  matched as bare words; real code requests still fire through `code` itself, a language name, a
+  fenced block, or another technical term in the pattern.
+- **Aggregate learning could erase a context-complexity floor.** `route.ts`'s
+  `context-complexity-floor` raises the floor to `deep` for `comparison` and `reasoning` categories
+  alone (a short, vague follow-up to a task that needed deep reasoning), but the learning-layer
+  downgrade guard in `mcp/learning.mjs` only recognized a fixed `high-stakes`/`legal`/`security`/
+  `medical`/`finance` category set plus hard capabilities. Neither `comparison` nor `reasoning` set a
+  capability, so recorded downgrade overrides could — and, reproducibly, did — push a
+  floor-protected route down to `balanced` or lower. The guard's category set now matches every
+  category `context-complexity-floor` treats as floor-worthy.
+
+### Fixed — pipeline
+
+- **A chunk boundary could split a UTF-16 surrogate pair.** `chunkText`'s hard character-count
+  fallback (used when a long run of text has no whitespace/punctuation to split on, e.g. a run of
+  emoji) is a pure code-unit count with no content awareness, and could land between a high and low
+  surrogate. `reassembleChunks` still recombines the split pair losslessly in JS-string space, but a
+  lone surrogate has no valid UTF-8 encoding, so the compression sidecar — which re-encodes each
+  chunk independently over its UTF-8 stdin pipe — would silently replace it with U+FFFD before the
+  model ever saw it. The fallback now nudges the split point off any surrogate-pair boundary.
+- **An unterminated brevity marker was left orphaned instead of cleaned up.** A start marker with no
+  matching end marker (truncated content, or a malformed marker) was left in place, so the next call
+  appended a second full block alongside it instead of replacing it. Now dropped along with
+  everything after it, same as a well-formed block.
+
+### Fixed — protocol
+
+- **A schema-valid attachment could hang a client forever.** File attachments are valid up to 50 MiB
+  decoded (`mcp/pipeline/files.mjs`), around 67 MiB base64-encoded, but the stdio transport's
+  1 MiB line cap rejected any realistically sized attachment before it was even parsed — and that
+  rejection can never carry a correlatable `id`, since the oversized line is never parsed, so a
+  client that matches responses by `id` waits forever. stdio is a local pipe to whichever process
+  spawned it, not a network listener, and `readline` already buffers a full line before this check
+  runs regardless of the threshold, so raising the cap (to 100 MiB) does not change the transport's
+  actual worst-case memory exposure — it only stops rejecting legitimate, schema-valid requests.
+- **A prompt made entirely of invisible Unicode passed "non-whitespace" validation.**
+  `String.prototype.trim()` does not strip zero-width space (U+200B), BOM/ZWNBSP (U+FEFF), or other
+  Unicode format characters, so a prompt containing only those got routed as if it were meaningful
+  content. `stringValue`'s `nonWhitespace` check now requires at least one character outside
+  whitespace and the Unicode `Cf` (format) category — closing the gap everywhere it's used: prompts,
+  context turns, attachment names, and model identifiers.
+
+### Fixed — documentation
+
+- **`docs/mcp.md` never documented `prepare_request`** and still called itself the "0.5 reference"
+  at version `0.6.0`. Added a tool-surface section and bumped the header to `0.7.0`.
+- **README undercounted the tool surface** ("nine tools", "the other eight tools", missing
+  `prepare_request` from the Tools table) after the same tool was added.
+
 ## [0.6.0] — 2026-07-28
 
 A correctness and credibility release. Several controls the 0.5 documentation described did not

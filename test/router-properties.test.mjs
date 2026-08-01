@@ -181,6 +181,22 @@ test('trivial prompts containing an incidental trigger word do not reach the top
   }
 });
 
+test('common English words that overlap programming vocabulary do not falsely require code capability', () => {
+  // 'class' and 'function' are ordinary nouns outside programming. A prompt that merely contains one,
+  // with no other technical signal, must not be flagged as needing a code-capable model.
+  const nonTechnical = [
+    'Explain the legal class action settlement process for this financial dispute.',
+    'Describe the function of the judiciary in a democracy.',
+    'What time is the wedding function tomorrow?',
+    'Which social class does this character belong to in the novel?',
+  ];
+  for (const prompt of nonTechnical) {
+    const decision = route(prompt);
+    assert.equal(decision.capabilities.code, false, `false-positive code capability for: ${prompt}`);
+    assert.ok(!decision.taskCategories.includes('code'), `false-positive code category for: ${prompt}`);
+  }
+});
+
 test('keyword-flip stability: injecting trigger words into an unchanged task rarely changes the decision', () => {
   // Semantically null suffixes that contain high-weight trigger vocabulary. The task is identical;
   // only the wording changes. A router that flips on these is matching words, not difficulty.

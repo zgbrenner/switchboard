@@ -129,6 +129,7 @@ capability requirement.
 | Tool | Purpose | Mutates state |
 |---|---|---|
 | `route_request` | Route and plan one request | no |
+| `prepare_request` | Run the configurable preflight pipeline: routing, file-to-Markdown conversion, prompt compression, reply-brevity steering | no |
 | `explain_route` | Concise explanation plus structured evidence | no |
 | `compare_routes` | Compare 2–8 policy or profile variants | no |
 | `simulate_policy` | Simulate variants without changing state | no |
@@ -157,11 +158,14 @@ Every tool publishes a bounded JSON Schema 2020-12 input **and** output contract
 | `categoryBoosts` | object | no | `{}` | Per-category score nudges |
 
 <details>
-<summary>The other eight tools</summary>
+<summary>The other nine tools</summary>
 
-`explain_route` takes the same input as `route_request` and returns prose plus evidence.
-`compare_routes` and `simulate_policy` take `{ prompt, variants: [{ label, arguments }] }` with 2–8
-variants. `validate_model_inventory` takes `{ models }`. `evaluate_router` takes
+`prepare_request` takes the same input as `route_request` plus `features` (independent `routing`,
+`fileToMarkdown`, `compression`, `brevity` toggles, all local), `attachments`, and `compression`/
+`brevity` options, and returns the routed decision alongside a per-stage report and the prepared
+prompt text. `explain_route` takes the same input as `route_request` and returns prose plus
+evidence. `compare_routes` and `simulate_policy` take `{ prompt, variants: [{ label, arguments }] }`
+with 2–8 variants. `validate_model_inventory` takes `{ models }`. `evaluate_router` takes
 `{ cases: [{ id, prompt, expectedTier }], includePreferences? }`. `record_override` takes
 `{ categories, recommendedTier, selectedTier }` and nothing else. `get_preference_state` and
 `reset_preference_state` take no arguments. Full schemas: [docs/mcp.md](docs/mcp.md).
@@ -275,7 +279,7 @@ separate controls that remain on regardless.
 | Learned preferences cannot bypass safety floors | Floors applied after all adjustments | `router-properties.test.mjs` |
 | Preference state is per-session unless opted in | In-memory store by default | `mcp-learning-isolation.test.mjs` |
 
-All nine tools are annotated `openWorldHint: false` — Switchboard never reaches outside itself.
+All ten tools are annotated `openWorldHint: false` — Switchboard never reaches outside itself.
 
 Persisted state, when you opt in via `SWITCHBOARD_MCP_STATE_PATH`, contains only bounded per-category
 counters and weights.
@@ -348,20 +352,21 @@ npm run eval:fetch      # download HELM outcome data (no API key)
 npm run benchmark:oracle
 ```
 
-There is no CI. **`npm run verify` is the gate**, and it must pass before anything is merged or
-published — `prepublishOnly` runs it again so a release cannot skip it. It covers typecheck, lint,
-format, the full test suite, the production build, and a real stdio smoke test against the built
-server.
+**`npm run verify` is the gate**, and it must pass before anything is merged or published —
+`prepublishOnly` runs it again so a release cannot skip it. It covers typecheck, lint, format, the
+full test suite, the production build, and a real stdio smoke test against the built server.
 
-Two checks worth running by hand before a release, because nothing runs them for you:
+CI (`.github/workflows/ci.yml`) runs `npm run verify` on every push and pull request across a
+Node 22/24 × Linux/macOS/Windows matrix, plus a dependency audit and CodeQL. A separate
+`package-smoke` job packs the tarball, installs it into an empty project, and runs
+`scripts/packed-smoke.mjs` against the installed package — the check that catches a missing `files`
+entry or a broken build hook, the class of defect that makes a published package fail on install
+while every local test still passes. If you can't wait for CI, run the same two steps by hand:
 
 ```bash
 npm pack                                  # then install the tarball into an empty project
 npx @modelcontextprotocol/inspector --cli node mcp/index.mjs --method tools/list
 ```
-
-The first is the only check that catches a missing `files` entry or a broken build hook — the class
-of defect that makes a published package fail on install while every local test still passes.
 
 stdout carries newline-delimited JSON-RPC only. A stray `console.log` anywhere under `mcp/` or
 `src/` corrupts the stream and the client silently drops the connection — the linter fails the build

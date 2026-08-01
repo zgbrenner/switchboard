@@ -15,8 +15,12 @@ function withoutExistingBlock(text) {
   const start = text.indexOf(BREVITY_MARKER.start);
   if (start < 0) return text;
   const end = text.indexOf(BREVITY_MARKER.end, start + BREVITY_MARKER.start.length);
-  if (end < 0) return text;
-  return `${text.slice(0, start)}${text.slice(end + BREVITY_MARKER.end.length)}`.trimEnd();
+  // An unterminated block (a start marker with no matching end -- truncated content, or a malformed
+  // marker) is stale brevity scaffolding, not meaningful reply text. Leaving it in place let a second
+  // block get appended alongside the orphaned one on the next call, so drop everything from the
+  // start marker to the end of the text rather than only the well-formed start-to-end span.
+  const sliceEnd = end < 0 ? text.length : end + BREVITY_MARKER.end.length;
+  return `${text.slice(0, start)}${text.slice(sliceEnd)}`.trimEnd();
 }
 
 export function appendBrevityInstruction(text, level = 'concise') {

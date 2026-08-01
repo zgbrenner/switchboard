@@ -1,6 +1,25 @@
 const DEFAULT_MAX_CHARACTERS = 6_000;
 const MIN_SPLIT_FRACTION = 0.55;
 
+/**
+ * Nudges a split index forward by one UTF-16 code unit if it falls between a high and low
+ * surrogate. Every whitespace/punctuation candidate below already splits at a real character (never
+ * a surrogate), so this only ever matters for the raw `limit` fallback: a pure code-unit count with
+ * no content awareness, which is how a long unbroken run of astral characters (emoji, etc.) with no
+ * whitespace in range gets a chunk boundary through the middle of a surrogate pair. `reassembleChunks`
+ * still recombines a split pair losslessly in JS-string space, but a lone surrogate has no valid
+ * UTF-8 encoding, so any consumer that re-encodes a chunk on its own (the compression sidecar, over
+ * its UTF-8 stdin pipe) silently replaces it with U+FFFD before the model ever sees it.
+ */
+function avoidSurrogateSplit(text, index) {
+  if (index > 0 && index < text.length) {
+    const before = text.charCodeAt(index - 1);
+    const at = text.charCodeAt(index);
+    if (before >= 0xd800 && before <= 0xdbff && at >= 0xdc00 && at <= 0xdfff) return index + 1;
+  }
+  return index;
+}
+
 function splitPoint(text, start, limit) {
   const minimum = start + Math.floor((limit - start) * MIN_SPLIT_FRACTION);
   const candidates = [
@@ -24,7 +43,7 @@ function splitPoint(text, start, limit) {
     }
     if (last >= minimum) return last;
   }
-  return limit;
+  return avoidSurrogateSplit(text, limit);
 }
 
 function splitPlainSegment(text, startOffset, maxCharacters) {

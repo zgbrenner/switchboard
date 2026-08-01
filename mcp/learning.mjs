@@ -2,7 +2,13 @@ import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 
 const TIERS = ['fast', 'balanced', 'deep', 'max'];
-const HIGH_STAKES = new Set(['high-stakes', 'legal', 'security', 'medical', 'finance']);
+// Mirrors every category route.ts's context-complexity-floor treats as floor-worthy
+// (src/router/route.ts, the `context-complexity-floor` reason), plus the additional domains below.
+// A learned downgrade must never bypass a floor the router itself deliberately raised, so this set
+// has to be a superset of that list -- 'comparison' and 'reasoning' were previously missing, which
+// let enough downgrade overrides erase a context-complexity-floor route (e.g. a short vague
+// follow-up to a comparison/reasoning task) down to 'balanced' or lower.
+const HIGH_STAKES = new Set(['high-stakes', 'legal', 'security', 'medical', 'finance', 'comparison', 'reasoning']);
 const MAX_STATE_BYTES = 1_048_576;
 const persistentStores = new Map();
 

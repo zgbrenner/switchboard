@@ -15,7 +15,9 @@
 import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 
+const tscBin = fileURLToPath(new URL('../node_modules/typescript/bin/tsc', import.meta.url));
 const TIERS = ['fast', 'balanced', 'deep', 'max'];
 const dataPath = process.argv.find((a) => a.startsWith('--data='))?.slice('--data='.length) ?? 'benchmarks/data/helm-gsm.jsonl';
 const strict = process.argv.includes('--strict');
@@ -26,7 +28,7 @@ if (!existsSync(dataPath)) {
 }
 
 if (!existsSync('.test-dist/router/route.js')) {
-  const compile = spawnSync('tsc', ['-p', 'tsconfig.test.json'], { stdio: 'inherit', shell: process.platform === 'win32' });
+  const compile = spawnSync(process.execPath, [tscBin, '-p', 'tsconfig.test.json'], { stdio: 'inherit' });
   if (compile.status !== 0) process.exit(compile.status ?? 1);
 }
 const { routeRequest } = await import('../.test-dist/router/route.js');

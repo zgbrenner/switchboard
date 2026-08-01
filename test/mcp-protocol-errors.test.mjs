@@ -111,3 +111,37 @@ test('stdio emits no id field for unparseable input and writes only JSON-RPC to 
   assert.ok(!Object.hasOwn(messages[0], 'id'), 'parse-error reply must omit id rather than send null');
   assert.equal(messages[1].id, 3);
 });
+
+test('a schema-valid attachment well within the documented 50 MiB limit is not rejected by the stdio line cap', async () => {
+  // mcp/pipeline/files.mjs allows attachments up to 50 MiB decoded (~67 MiB base64). A stdio line
+  // cap below that rejects a legitimate, schema-valid request before it is even parsed, and that
+  // rejection can never carry a correlatable id -- the client hangs forever waiting for a match.
+  const written = [];
+  const output = new Writable({
+    write(chunk, _encoding, callback) {
+      written.push(chunk.toString());
+      callback();
+    },
+  });
+  const contentBase64 = Buffer.alloc(6 * 1024 * 1024, 'a').toString('base64');
+  const request = JSON.stringify({
+    jsonrpc: '2.0',
+    id: 9,
+    method: 'tools/call',
+    params: {
+      name: 'prepare_request',
+      arguments: {
+        prompt: 'Summarize the attached file.',
+        features: { routing: false, fileToMarkdown: true },
+        attachments: [{ name: 'note.txt', contentBase64 }],
+      },
+    },
+  });
+  const input = Readable.from([`${request}\n`]);
+  await serveStdio({ input, output, error: new Writable({ write: (_c, _e, cb) => cb() }), session: session() });
+
+  const messages = written.join('').trim().split('\n').filter(Boolean).map(JSON.parse);
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].id, 9);
+  assert.notEqual(messages[0].error?.message, 'Message exceeds 1 MiB.');
+});

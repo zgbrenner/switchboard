@@ -17,7 +17,7 @@ test('every MCP tool publishes a bounded JSON Schema 2020-12 output contract', a
   );
   await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
   const response = await session.handle(request(2, 'tools/list', {}));
-  assert.equal(response.result.tools.length, 9);
+  assert.equal(response.result.tools.length, 10);
   for (const tool of response.result.tools) {
     assert.equal(tool.outputSchema.$schema, 'https://json-schema.org/draft/2020-12/schema', tool.name);
     assert.equal(tool.outputSchema.type, 'object', tool.name);

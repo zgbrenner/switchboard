@@ -1,6 +1,6 @@
-# Switchboard MCP 0.5 reference
+# Switchboard MCP reference
 
-**Version:** 0.6.0  
+**Version:** 0.7.0  
 **Switchboard API contract:** `2026-07-24`  
 **MCP revision:** `2025-11-25`  
 **Compatible revisions:** `2025-06-18`, `2025-03-26`
@@ -89,6 +89,25 @@ The output includes:
 - Concrete model resolution and capability-negotiation details
 - Aggregate-learning adjustment metadata
 - API compatibility metadata
+
+### `prepare_request`
+
+Takes the same input as `route_request` plus:
+
+- `features`: independent `routing` (default on), `compression`, `brevity`, `fileToMarkdown`
+  (each default off) switches. Stages always run in a fixed order — routing, file-to-Markdown
+  conversion, compression, brevity — regardless of which subset is enabled.
+- `attachments`: up to 20 local files to convert, each a local `path` or inline `contentBase64`.
+  Remote URLs are rejected and paths are root-restricted; nothing is fetched over the network.
+- `compression`: mode (`auto`, `model`, `deterministic`), and bounds on minimum input size, chunk
+  size, minimum savings ratio, score threshold, and timeout. `auto` uses a local quantized ONNX
+  model when available and falls back to a deterministic, lossless phrase compaction otherwise; a
+  compression failure is always visible in the stage report, never silently swallowed.
+- `brevity`: reply-length level (`brief`, `concise`, `minimal`), appended after every other stage
+  and idempotent under repeated application.
+
+The output reports each stage's status (`disabled`, `skipped`, `applied`, `bypassed`, `fallback`,
+or `failed`) alongside the routed decision and the prepared prompt text.
 
 ### `explain_route`
 

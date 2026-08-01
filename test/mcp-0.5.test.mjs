@@ -26,7 +26,7 @@ async function session(route = async () => baseDecision(), preferenceStore = new
   const initialized = await value.handle(
     request(1, 'initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'mcp-0.5-test', version: '1' } }),
   );
-  assert.equal(initialized.result.serverInfo.version, '0.5.0');
+  assert.equal(initialized.result.serverInfo.version, '0.7.0');
   await value.handle({ jsonrpc: '2.0', method: 'notifications/initialized' });
   return value;
 }
@@ -36,13 +36,14 @@ async function tool(value, id, name, args = {}) {
 }
 
 test('publishes the full 0.5 tool surface and additive API metadata', async () => {
-  assert.equal(SERVER_INFO.version, '0.5.0');
+  assert.equal(SERVER_INFO.version, '0.7.0');
   const value = await session();
   const listed = await value.handle(request(2, 'tools/list', {}));
   assert.deepEqual(
     listed.result.tools.map((item) => item.name),
     [
       'route_request',
+      'prepare_request',
       'explain_route',
       'compare_routes',
       'simulate_policy',
@@ -218,6 +219,31 @@ test('aggregate learning cannot downgrade high-stakes or capability-bound routes
     store,
   );
   const routed = await tool(value, 2, 'route_request', { prompt: 'Audit this authentication code.', profile: 'security' });
+  assert.equal(routed.result.structuredContent.tier, 'deep');
+  assert.equal(routed.result.structuredContent.learningAdjustment.applied, false);
+  assert.equal(routed.result.structuredContent.learningAdjustment.reason, 'downward-safety-floor');
+});
+
+test('aggregate learning cannot downgrade a context-complexity floor even with no hard capability', async () => {
+  // route.ts's context-complexity-floor (src/router/route.ts) raises the floor to 'deep' for
+  // 'comparison' and 'reasoning' categories alone, with no capability set. The learning guard has to
+  // recognize these as floor-protected too, or enough recorded downgrades erase a floor the router
+  // deliberately raised.
+  const store = new AggregatePreferenceStore();
+  for (let index = 0; index < 4; index += 1) {
+    await store.record({ categories: ['reasoning', 'comparison'], recommendedTier: 'deep', selectedTier: 'fast' });
+  }
+  const value = await session(
+    async () =>
+      baseDecision({
+        tier: 'deep',
+        effort: 'high',
+        taskCategories: ['reasoning', 'comparison'],
+        capabilities: { web: false, files: false, vision: false, longContext: false, code: false },
+      }),
+    store,
+  );
+  const routed = await tool(value, 2, 'route_request', { prompt: 'same as before' });
   assert.equal(routed.result.structuredContent.tier, 'deep');
   assert.equal(routed.result.structuredContent.learningAdjustment.applied, false);
   assert.equal(routed.result.structuredContent.learningAdjustment.reason, 'downward-safety-floor');
