@@ -65,6 +65,28 @@ actually pass on a clean checkout.
   `unreadableScript` floor (`unknown-language` category): a non-English request correctly held at
   `balanced` could be learned back down to `fast`, undermining the exact protection added in 0.6.0
   to stop non-English prompts being silently routed as if they were trivial.
+- **The `web` capability fired on "research" mentioned as a topic, not requested as an action.**
+  The bare `research` signal matched anywhere in the prompt, so "I'm doing research for my thesis on
+  19th century poetry" required web access even though nothing is being asked of the assistant.
+  `research` now excludes noun-phrase uses via a lookbehind/lookahead (a possessive/determiner/
+  "doing"/"conducting" immediately before it, or "shows"/"suggests"/"indicates"/etc. immediately
+  after) instead of requiring a specific word to follow it — an initial fix that required a
+  determiner right after `research` correctly excluded the noun uses but also silently broke the far
+  more common determiner-less imperative phrasing ("Research quantum computing breakthroughs.",
+  "Please research renewable energy trends."), trading a wasteful over-trigger for a harmful
+  under-trigger on the more common construction.
+- **The `high-coverage` signal fired on the frequency idiom "every."** "Remind me to stretch every
+  morning" nudged a trivial reminder from `fast` toward `balanced`, since bare `every` matched
+  regardless of meaning. `every` now requires a following word that actually signals exhaustive
+  scope (`possible`, `single`, `conceivable`, `relevant`, `last`), alongside the existing `all
+  possible` sibling; "every possible failure mode" and "every single requirement" still fire.
+- **Investigated, left unchanged: bare `audit`/`verify`/`prove` firing on everyday non-technical
+  uses** ("audit my closet", "verify my flight is on time", "prove I paid rent" each score the
+  `deep-reasoning` weight alone). Unlike the fixes above, there is no minority idiom to exclude via
+  lookahead, and the genuine uses are frequently just as bare — "Verify this proof." and "Prove this
+  theorem." carry no other signal at all, so requiring co-occurring evidence to fire would misroute
+  those to the cheapest tier instead. Left alone as a lower-severity, non-capability-affecting
+  tier-nudge until a fix is found that doesn't trade one false positive for another.
 
 ### Fixed — reliability
 

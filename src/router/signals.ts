@@ -24,11 +24,30 @@ const PATTERNS = {
    * Explicit requests to go and consult sources. Deliberately excludes bare recency words such as
    * "latest" or "today", which are handled by `recency` at a far lower weight: "what is the weather
    * today" needs web access but is not a research task.
+   *
+   * The bare `research` alternative excludes noun-phrase uses via a negative lookbehind/lookahead
+   * rather than requiring a specific word to follow it. An earlier version of this fix required
+   * `research` to be immediately followed by a determiner/pronoun/wh-word ("research the ...",
+   * "research this"), which correctly excluded self-descriptive mentions ("I'm doing research for my
+   * thesis on 19th century poetry") but silently broke the far more common determiner-less imperative
+   * phrasing ("Research quantum computing breakthroughs.", "Please research renewable energy
+   * trends.") -- trading a wasteful over-trigger for a harmful under-trigger on the more common
+   * construction. Excluding by what precedes/follows the word instead (a possessive/determiner/
+   * "doing"/"conducting" before it; "shows"/"suggests"/"indicates"/etc. after it, i.e. `research` used
+   * as a sentence's subject or as the object of another verb) keeps the bare imperative case intact.
    */
   research:
-    /\b(research|look (?:this|it) up|browse|search the web|(?:primary|official|authoritative|original) sources?|citations?|cite sources?|literature review|verify [^.]{0,48}\bagainst\b)/i,
+    /\b(?<!(?:my|his|her|their|our|its|the|this|that|these|those|some|any|more|further|new|recent|prior|existing|ongoing|academic|market|user|ux|clinical|scientific|doing|conducting)\s)research\b(?!\s+(?:paper|papers|shows?|suggests?|indicates?|reveals?|finds?|found))|\b(?:look (?:this|it) up|browse|search the web|(?:primary|official|authoritative|original) sources?|citations?|cite sources?|literature review|verify [^.]{0,48}\bagainst\b)/i,
   /** Recency cues imply web access but carry little evidence about reasoning difficulty. */
   recency: /\b(current sources?|latest|most recent|today'?s?|this (?:week|month|year)|up[- ]to[- ]date|breaking)\b/i,
+  // 'audit', 'verify', and 'prove' also have everyday, non-technical bare uses ("audit my closet",
+  // "verify my flight is on time", "prove I paid rent"), but -- unlike 'class'/'function'/'react' or
+  // 'picture'/'chart' above -- there is no minority idiom to exclude via lookahead, and the genuine
+  // uses are frequently just as bare: "Verify this proof." and "Prove this theorem." carry no other
+  // signal at all, so requiring co-occurring evidence would misroute them to the cheapest tier.
+  // Investigated and left unrestricted: the false positives are real but narrower and lower-severity
+  // (nudging a short prompt into `deep`, not requiring a capability), and every fix attempted broke a
+  // genuine short verification/proof request instead.
   deep: /\b(deep(?:ly)?|exhaustive|comprehensive|audit|double[- ]check|verify|validate|prove|rigorous|subtle|edge cases?|root cause|threat model)\b/i,
   compare: /\b(compare|contrast|reconcile|differences?|trade[- ]offs?|alternatives?|competing approaches?)\b/i,
   plan: /\b(implementation plan|implementation|architecture|architect|design(?: an?| the)?|outline|roadmap|spec(?:ification)?|step[- ]by[- ]step)\b/i,
@@ -42,7 +61,12 @@ const PATTERNS = {
   code: /```|\b(code|debug|stack trace|exception|typescript|javascript|python|rust|api|sql|regex|repository|pull request|middleware|library|browser extension|software|security review|vulnerability|authentication|authorization|idempotency|concurrency)\b/i,
   highStakes:
     /\b(legal|contracts?|medical|diagnosis|financial|securities|security|vulnerability|authentication|authorization|privacy|compliance)\b/i,
-  longOutput: /\b(detailed|thorough|long[- ]form|complete report|every|all possible)\b/i,
+  // Bare 'every' is dropped in favour of the phrasings that actually signal exhaustive scope. Bare
+  // 'every' also matches ordinary frequency idioms with no coverage implication at all ("remind me to
+  // stretch every morning" means "each recurring instance", not "comprehensive scope"), nudging a
+  // trivial reminder from `fast` toward `balanced`. 'every possible/single/conceivable/relevant/last'
+  // sit alongside the existing 'all possible' sibling and only fire on genuine exhaustive-scope asks.
+  longOutput: /\b(detailed|thorough|long[- ]form|complete report|every (?:possible|single|conceivable|relevant|last)|all possible)\b/i,
   vague:
     /^(?:okay[,.]?\s*)?(?:do|redo|try|make|use|continue|fix)\s+(?:it|that|this)(?:\s+again)?\b|\b(?:same|other interpretation|previous version|like before)\b/i,
   // 'picture' and 'chart' are dual-use: often a genuine visual reference ("what's in this
