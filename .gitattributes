@@ -1,0 +1,6 @@
+# Normalize all text files to LF on checkout, regardless of the checking-out machine's
+# core.autocrlf setting. Biome (biome.json's formatter.lineEnding: "lf") formats and lints
+# checked-out files directly, so a Windows checkout with core.autocrlf=true silently converting
+# these to CRLF fails `npm run verify`'s format check out of the box -- reproduced both locally and
+# on GitHub Actions' windows-latest runners.
+* text=auto eol=lf
