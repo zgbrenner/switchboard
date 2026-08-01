@@ -25,8 +25,14 @@ export function exactKeys(value, allowed, label) {
     if (!accepted.has(key)) throw new ValidationError(`${label} contains an unsupported property: ${key}.`);
 }
 
+// `String.prototype.trim()` only strips characters in the WhiteSpace/LineTerminator production, not
+// invisible Unicode format characters (zero-width space U+200B, BOM/ZWNBSP U+FEFF, zero-width
+// joiners, ...), so a prompt made entirely of those passed the "non-whitespace" check and got routed
+// as if it were meaningful content. This also excludes the Cf (format) category.
+const MEANINGFUL_CONTENT = /[^\s\p{Cf}]/u;
+
 export function stringValue(value, label, { min = 0, max = 64_000, nonWhitespace = false } = {}) {
-  if (typeof value !== 'string' || value.length < min || value.length > max || (nonWhitespace && !value.trim())) {
+  if (typeof value !== 'string' || value.length < min || value.length > max || (nonWhitespace && !MEANINGFUL_CONTENT.test(value))) {
     throw new ValidationError(
       `${label} must be a string between ${min} and ${max} characters${nonWhitespace ? ' and contain a non-whitespace character' : ''}.`,
     );

@@ -5,6 +5,11 @@ const { normalizeRouteArguments } = await import('../mcp/schema.mjs');
 
 test('manual validation rejects inputs that contradict the advertised JSON Schema', () => {
   assert.throws(() => normalizeRouteArguments({ prompt: '   ' }), /prompt/i);
+  // Zero-width space (U+200B) and BOM/ZWNBSP (U+FEFF) are invisible Unicode format characters, not
+  // whitespace: String.prototype.trim() does not strip them, so a naive `!value.trim()` check let a
+  // prompt made entirely of them through as if it were meaningful content.
+  assert.throws(() => normalizeRouteArguments({ prompt: '​​​' }), /prompt/i);
+  assert.throws(() => normalizeRouteArguments({ prompt: '﻿' }), /prompt/i);
   assert.throws(() => normalizeRouteArguments({ prompt: 'x', files: [{ name: 'x', detectedType: 'executable' }] }), /detectedType/i);
   assert.throws(() => normalizeRouteArguments({ prompt: 'x', files: [{ name: 'x', capabilities: { vision: 'yes' } }] }), /vision/i);
   assert.throws(

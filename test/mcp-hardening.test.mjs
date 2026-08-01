@@ -18,7 +18,7 @@ async function initializedSession() {
     }),
   );
   assert.equal(initialized.result.protocolVersion, '2025-11-25');
-  assert.equal(initialized.result.serverInfo.version, '0.5.0');
+  assert.equal(initialized.result.serverInfo.version, '0.7.0');
   assert.equal(await session.handle({ jsonrpc: '2.0', method: 'notifications/initialized' }), null);
   return session;
 }

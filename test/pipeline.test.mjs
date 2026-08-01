@@ -23,6 +23,36 @@ test('brevity steering is appended at the end and is idempotent', () => {
   assert.equal((once.match(/switchboard:brevity:start/g) ?? []).length, 1);
 });
 
+test('brevity marker stripping cleans up an unterminated block instead of leaving it orphaned', () => {
+  // A start marker with no matching end (truncated content, or a malformed marker) is stale brevity
+  // scaffolding. Leaving it untouched let a second full block get appended alongside the orphaned
+  // one on the next call.
+  const truncated = `Some reply text.\n\n${BREVITY_MARKER.start}\nReply instruction: partial`;
+  const once = appendBrevityInstruction(truncated, 'concise');
+  assert.equal((once.match(/switchboard:brevity:start/g) ?? []).length, 1);
+  const twice = appendBrevityInstruction(once, 'concise');
+  assert.equal(once, twice);
+});
+
+test('chunking never splits a surrogate pair', () => {
+  // A long run of astral characters (emoji) with no whitespace anywhere forces the hard
+  // character-count fallback, which has no content awareness and can otherwise land a chunk
+  // boundary between a high and low surrogate. reassembleChunks recombines a split pair losslessly
+  // in JS-string space, but a lone surrogate has no valid UTF-8 encoding: any consumer that
+  // re-encodes a chunk on its own (the compression sidecar, over its UTF-8 stdin pipe) would
+  // silently replace it with U+FFFD before the model ever sees it.
+  const source = '😀'.repeat(400);
+  const chunks = chunkText(source, { maxCharacters: 128 });
+  assert.ok(chunks.length > 1);
+  assert.equal(reassembleChunks(chunks), source);
+  for (const chunk of chunks) {
+    const first = chunk.text.charCodeAt(0);
+    const last = chunk.text.charCodeAt(chunk.text.length - 1);
+    assert.ok(!(first >= 0xdc00 && first <= 0xdfff), `chunk ${chunk.index} starts with a lone low surrogate`);
+    assert.ok(!(last >= 0xd800 && last <= 0xdbff), `chunk ${chunk.index} ends with a lone high surrogate`);
+  }
+});
+
 test('chunking preserves the source exactly before compression', () => {
   const source = ['# Heading', '', 'First paragraph. '.repeat(120), '', '```ts', 'const value = 1;', '```', '', 'Last paragraph.'].join(
     '\n',

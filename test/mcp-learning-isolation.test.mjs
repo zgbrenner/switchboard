@@ -74,3 +74,44 @@ test('a failed load can be retried after the state file is corrected', async (t)
   await writeFile(path, JSON.stringify({ version: 1, updatedAt: null, totalOverrides: 0, categories: {} }), 'utf8');
   assert.equal((await store.snapshot()).totalOverrides, 0);
 });
+
+test('a transient persist failure does not permanently wedge the write queue', async () => {
+  // this.queue serializes writes by chaining .then() calls. Chaining .then() onto an already-
+  // rejected promise just re-propagates that rejection forever, so a single transient failure
+  // (a full disk, a concurrent writer, any I/O hiccup) used to poison every future record/reset/
+  // snapshot/apply call on this store instance -- permanently, with no further contention at all.
+  const store = new AggregatePreferenceStore();
+  const originalPersist = store.persist.bind(store);
+  let failNext = true;
+  store.persist = () => {
+    if (failNext) {
+      failNext = false;
+      return Promise.reject(new Error('simulated transient failure'));
+    }
+    return originalPersist();
+  };
+
+  await assert.rejects(store.record(override), /simulated transient failure/);
+  // The queue must have recovered: an unrelated later call succeeds instead of failing forever.
+  const second = await store.record({ categories: ['code'], recommendedTier: 'balanced', selectedTier: 'deep' });
+  assert.equal(second.categories.code.overrides, 1);
+  const snapshot = await store.snapshot();
+  assert.equal(snapshot.categories.code.overrides, 1);
+});
+
+test('the number of distinct categories is bounded, protecting route_request from an oversized state file', async () => {
+  // Nothing previously capped how many distinct category keys record() could accumulate over time
+  // (only each call's own 1-16 categories were bounded). Left unbounded, this can grow the
+  // persisted file past its own 1 MiB read limit, and every subsequent load -- including apply(),
+  // which route_request calls on every invocation when preferences are shared -- would then throw,
+  // breaking routing itself for every session sharing that state file.
+  const store = new AggregatePreferenceStore();
+  for (let batch = 0; batch < 140; batch += 1) {
+    const categories = Array.from({ length: 16 }, (_, i) => `cat${String(batch * 16 + i).padStart(36, '0')}`);
+    await store.record({ categories, recommendedTier: 'balanced', selectedTier: 'deep' });
+  }
+  const snapshot = await store.snapshot();
+  const distinctCategories = Object.keys(snapshot.categories).length;
+  assert.ok(distinctCategories < 2_240, `expected the category count to be capped, got ${distinctCategories}`);
+  assert.ok(Buffer.byteLength(JSON.stringify(snapshot), 'utf8') < 1_048_576, 'capped state must stay well under the 1 MiB limit');
+});

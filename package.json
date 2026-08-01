@@ -1,6 +1,6 @@
 {
   "name": "switchboard-mcp",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Privacy-first local MCP server that recommends a model, quality tier, reasoning effort, and execution plan for an AI request before it runs.",
   "keywords": [
     "mcp",

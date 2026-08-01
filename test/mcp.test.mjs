@@ -35,7 +35,7 @@ test('initializes with current MCP capabilities and negotiates compatible versio
   assert.equal(response.result.protocolVersion, '2025-11-25');
   assert.deepEqual(response.result.capabilities, { tools: {}, resources: {}, prompts: {}, completions: {} });
   assert.equal(response.result.serverInfo.name, 'switchboard');
-  assert.equal(response.result.serverInfo.version, '0.5.0');
+  assert.equal(response.result.serverInfo.version, '0.7.0');
   assert.match(response.result.instructions, /route_request/);
 
   const older = createSwitchboardMcpSession();

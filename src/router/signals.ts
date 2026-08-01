@@ -32,13 +32,25 @@ const PATTERNS = {
   deep: /\b(deep(?:ly)?|exhaustive|comprehensive|audit|double[- ]check|verify|validate|prove|rigorous|subtle|edge cases?|root cause|threat model)\b/i,
   compare: /\b(compare|contrast|reconcile|differences?|trade[- ]offs?|alternatives?|competing approaches?)\b/i,
   plan: /\b(implementation plan|implementation|architecture|architect|design(?: an?| the)?|outline|roadmap|spec(?:ification)?|step[- ]by[- ]step)\b/i,
-  code: /```|\b(code|debug|stack trace|exception|typescript|javascript|python|rust|react|api|sql|regex|function|class|repository|pull request|middleware|library|browser extension|software|security review|vulnerability|authentication|authorization|idempotency|concurrency)\b/i,
+  // 'class', 'function', and 'react' are deliberately excluded as bare words: they are common
+  // English nouns/verbs outside programming ("class action", "social class", "wedding function",
+  // "the function of the judiciary", "how should I react to my coworker's comment") and firing on
+  // them alone produced false-positive code-capability requirements on purely non-technical prompts.
+  // Real code requests almost always pair them with another signal here (a language name, 'code'
+  // itself, a fence, or another technical term) -- "React" specifically also nearly always co-occurs
+  // with 'javascript'/'typescript'/'code'/a fence in a genuine request about the framework.
+  code: /```|\b(code|debug|stack trace|exception|typescript|javascript|python|rust|api|sql|regex|repository|pull request|middleware|library|browser extension|software|security review|vulnerability|authentication|authorization|idempotency|concurrency)\b/i,
   highStakes:
     /\b(legal|contracts?|medical|diagnosis|financial|securities|security|vulnerability|authentication|authorization|privacy|compliance)\b/i,
   longOutput: /\b(detailed|thorough|long[- ]form|complete report|every|all possible)\b/i,
   vague:
     /^(?:okay[,.]?\s*)?(?:do|redo|try|make|use|continue|fix)\s+(?:it|that|this)(?:\s+again)?\b|\b(?:same|other interpretation|previous version|like before)\b/i,
-  vision: /\b(image|photo|picture|screenshot|diagram|visual|chart)\b/i,
+  // 'picture' and 'chart' are dual-use: often a genuine visual reference ("what's in this
+  // picture", "explain this chart"), but also common idioms with no visual content at all ("picture
+  // this: a scenario where...", "chart out a savings plan"). Unlike 'class'/'function'/'react' above,
+  // both have a real single-word vision use worth keeping, so only the specific idiomatic phrasing
+  // is excluded rather than dropping the word entirely.
+  vision: /\b(image|photo|picture(?!\s+this\b)|screenshot|diagram|visual|chart(?!\s+(?:out|a course)\b))\b/i,
 };
 
 /**
