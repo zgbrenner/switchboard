@@ -301,9 +301,17 @@ If you take one thing from Switchboard, take the first row.
 
 Measured consequences, from `npm run benchmark:oracle`:
 
-- **On a public academic benchmark it is not distinguishable from a random router at matched cost**
-  (HELM `lite:gsm`, 1000 prompts × 49 priced models: 65.6% vs 65.7% random, p = 0.677). It routes
-  97% of those prompts to one tier because no English keyword fires on math word problems.
+- **On a public academic benchmark it is not distinguishable from a random router at matched cost.**
+  First measured on one scenario (HELM `lite:gsm`, 1000 prompts × 49 priced models: 65.6% vs 65.7%
+  random, p = 0.677), where the router sent 97% of prompts to one tier because no English keyword
+  fires on math word problems. That could have been an artifact of a single-task corpus, so it was
+  re-measured on **five pooled HELM Lite scenarios** (math, multi-subject knowledge, commonsense,
+  medical, long-context narrative; 3537 prompts × 49 priced models). It was not an artifact: pooling
+  spread the tier distribution and opened +3.8 points of headroom for perfect prompt-ordering, and
+  Switchboard scored **65.5% against 66.3% for random at the same cost (p = 1.000)** — behind, not
+  ahead. On the four binary-metric scenarios it edges ahead by +0.3 points (p = 0.015), but that
+  advantage disappears once the comparison is stratified by scenario (p = 0.861): what it has is a
+  weak ability to tell task *types* apart, not hard prompts from easy ones.
 - The signals are **English-only**. Other scripts are detected and held at a `balanced` floor with a
   judge requested, rather than guessed at — but they are not really routed.
 - `confidence` is an **evidence score, not a calibrated probability**. Do not threshold on it as if
@@ -312,7 +320,7 @@ Measured consequences, from `npm run benchmark:oracle`:
   not whether the routing decision was correct.
 - The **reasoning-effort axis is unevaluated** against measured outcomes; no public dataset labels it.
 
-The oracle on that same corpus reaches 99.6% at 1/400th the cost of always-max, so the headroom for
+The oracle on the pooled corpus reaches 98.7% at 1/50th the cost of always-max, so the headroom for
 routing is real — Switchboard just does not capture much of it yet. Full numbers, caveats and
 reproduction steps: [benchmarks/README.md](benchmarks/README.md).
 
@@ -350,8 +358,8 @@ tail -f ~/Library/Logs/Claude/mcp*.log
 npm install
 npm run verify          # typecheck, lint, format, tests, build, stdio smoke
 npm run benchmark       # routing regression corpus
-npm run eval:fetch      # download HELM outcome data (no API key)
-npm run benchmark:oracle
+npm run eval:fetch      # download one HELM scenario's outcome data (no API key)
+npm run benchmark:oracle    # --data=a.jsonl,b.jsonl to pool scenarios
 ```
 
 **`npm run verify` is the gate**, and it must pass before anything is merged or published —

@@ -3,6 +3,42 @@
 All notable changes to this project are documented here. This project adheres to
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+Evaluation methodology only. The router's detection logic is untouched; every routing decision it
+makes is byte-identical to 0.7.0.
+
+### Changed — evaluation
+
+- **`benchmark:oracle` now pools multiple HELM scenarios.** `--data=` accepts a comma-separated list
+  and may be repeated. The previous single-scenario result (`lite:gsm`) measured the corpus as much
+  as the router: on one homogeneous task type, no router can beat random at matched cost by more
+  than noise, by construction.
+- **Re-measured on five pooled scenarios** (`gsm`, `mmlu`, `med_qa`, `narrative_qa`, `commonsense`;
+  3537 prompts × 49 priced models). Pooling removed the degenerate tier distribution and raised the
+  perfect-ordering ceiling from +0.3 to +3.8 points over random — and Switchboard captured none of
+  it, scoring 65.5% against random's 66.3% at matched cost (p = 1.000). The single-scenario negative
+  result was not a corpus artifact. `benchmarks/README.md` has the full numbers.
+- **Added a scenario-stratified permutation test.** The unstratified shuffle can be beaten by merely
+  telling task types apart. Stratified, Switchboard shows no within-domain ordering signal
+  (p = 0.861), which reclassifies its one significant result as weak domain classification.
+- **The oracle row is now "cheapest model achieving the best score"** rather than "cheapest correct".
+  Identical for binary metrics; previously it called nearly every `f1_score`-scored prompt unsolvable.
+
+### Fixed — evaluation correctness
+
+- **`benchmark-oracle.mjs` keyed its outcome matrix on the bare `instance_id`.** HELM ids are indices
+  into each source dataset and are unique only within a (scenario, sub-scenario) pair, so pooling
+  merged 441 of 3537 prompts into an unrelated scenario's outcome vector. Now keyed on the triple.
+- **`fetch-oracle.mjs` loaded `instances.json` once per scenario.** Scenarios that are families of
+  sub-scenarios (`mmlu` is five subjects, `legalbench` five subsets) have independent id spaces, so
+  every row after the first sub-scenario received the wrong prompt text. It now caches one instance
+  map per sub-scenario, records a `subset` field on every row, and drops duplicate
+  (subset, instance, model) cells produced by models run under two decoding configurations.
+- **Pooled model rosters are intersected, not unioned.** HELM ran `gsm` against 94 models and other
+  lite scenarios against 95; a union roster would have made the density filter discard whole
+  scenarios silently.
+
 ## [0.7.0] — 2026-07-31
 
 A request-preparation release, plus a verification pass that found the release process itself had

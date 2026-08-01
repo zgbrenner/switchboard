@@ -13,8 +13,15 @@
  * HELM instance ids are stable across suite versions, so one scenario yields a dense
  * (prompt x model) matrix. Output is JSONL, one row per (prompt, model) pair:
  *
- *   {instance_id, prompt, model, scenario, metric, correct, prompt_tokens, output_tokens,
+ *   {instance_id, prompt, model, scenario, subset, metric, correct, prompt_tokens, output_tokens,
  *    output_tokens_measured, cost_usd, priced}
+ *
+ * `subset` matters. Several HELM scenarios are really a family of independent sub-scenarios --
+ * `mmlu:subject=econometrics`, `legalbench:subset=proa` -- each with its OWN instance-id space
+ * starting at `id0`. Instance ids are unique only within (scenario, subset), so both the fetcher
+ * (which caches one instances.json per subset) and any consumer joining on prompt identity must key
+ * on the pair. Decoding-only run parameters (`stop=none`) address the same instances and are
+ * deliberately folded into the same subset.
  *
  * Usage:
  *   node scripts/fetch-oracle.mjs --scenario=gsm --suite=lite --out=benchmarks/data/helm-gsm.jsonl
@@ -62,6 +69,20 @@ async function listPrefixes(prefix) {
   return output;
 }
 
+/**
+ * The sub-scenario a run addresses: the run name's parameter list with the model and any
+ * decoding-only parameter removed. `mmlu:subject=econometrics,method=multiple_choice_joint,model=x`
+ * -> `subject=econometrics,method=multiple_choice_joint`; `gsm:model=x` and `gsm:,stop=none,model=x`
+ * both -> `` (one instance set, two decoding configurations).
+ */
+function subsetOf(leaf) {
+  return leaf
+    .slice(leaf.indexOf(':') + 1)
+    .replace(/,?model=[^,]+/, '')
+    .replace(/,?stop=[^,]+/, '')
+    .replace(/^,|,$/g, '');
+}
+
 async function findRuns(suite, scenario) {
   const runs = [];
   for (const version of await listPrefixes(`${suite}/benchmark_output/runs/`)) {
@@ -69,7 +90,7 @@ async function findRuns(suite, scenario) {
       const leaf = run.replace(/\/$/, '').split('/').pop() ?? '';
       if (leaf.split(':')[0] !== scenario) continue;
       const model = /model=([^,/]+)/.exec(leaf)?.[1];
-      if (model) runs.push({ model, run: run.replace(/\/$/, '') });
+      if (model) runs.push({ model, subset: subsetOf(leaf), run: run.replace(/\/$/, '') });
     }
   }
   return runs;
@@ -114,7 +135,8 @@ const out = flag('out', `benchmarks/data/helm-${scenario}.jsonl`);
 console.log(`Discovering ${suite}:${scenario} runs in the HELM public bucket...`);
 const runs = await findRuns(suite, scenario);
 const distinctModels = new Set(runs.map((entry) => entry.model)).size;
-console.log(`  ${runs.length} runs across ${distinctModels} distinct models`);
+const distinctSubsets = new Set(runs.map((entry) => entry.subset)).size;
+console.log(`  ${runs.length} runs across ${distinctModels} distinct models and ${distinctSubsets} sub-scenario(s)`);
 if (runs.length === 0) {
   console.error(`No runs found for ${suite}:${scenario}. Check the scenario name.`);
   process.exit(1);
@@ -123,11 +145,14 @@ if (runs.length === 0) {
 const priceIndex = buildPriceIndex(await getJson(PRICES_URL));
 console.log(`  ${priceIndex.size} priced model names from LiteLLM`);
 
-const prompts = new Map();
+/** One prompt map per sub-scenario: instance ids restart at `id0` in each, so they cannot share one. */
+const promptsBySubset = new Map();
 const rows = [];
+const seen = new Set();
 let completed = 0;
+let duplicates = 0;
 
-for (const { model, run } of runs) {
+for (const { model, subset, run } of runs) {
   completed++;
   let predictions;
   try {
@@ -136,15 +161,26 @@ for (const { model, run } of runs) {
     console.log(`  [${completed}/${runs.length}] skip ${model} (incomplete upstream run)`);
     continue;
   }
-  if (prompts.size === 0) {
+  let prompts = promptsBySubset.get(subset);
+  if (!prompts) {
+    prompts = new Map();
     for (const instance of await getJson(`${GCS_OBJECT}${run}/instances.json`)) {
       if (instance?.id) prompts.set(instance.id, instance.input?.text ?? '');
     }
+    promptsBySubset.set(subset, prompts);
   }
   const price = priceIndex.get(normalizeName(model.split('_').pop() ?? model)) ?? priceIndex.get(normalizeName(model));
   for (const record of predictions) {
     const { metric, correct } = scoreOf(record.stats ?? {});
     if (correct === null) continue;
+    // A handful of models were run twice on the same sub-scenario under different decoding configs
+    // (`stop=none`). Keep the first observation so the matrix stays single-valued per cell.
+    const cell = `${subset}\u0000${record.instance_id}\u0000${model}`;
+    if (seen.has(cell)) {
+      duplicates++;
+      continue;
+    }
+    seen.add(cell);
     const promptTokens = record.stats?.num_prompt_tokens ?? 0;
     const measured = Boolean(record.stats?.num_output_tokens);
     // HELM records num_output_tokens as 0 for a sizeable minority of runs. Fall back to a
@@ -155,6 +191,7 @@ for (const { model, run } of runs) {
       prompt: prompts.get(record.instance_id) ?? null,
       model,
       scenario,
+      subset,
       metric,
       correct,
       prompt_tokens: promptTokens,
@@ -164,13 +201,19 @@ for (const { model, run } of runs) {
       priced: Boolean(price),
     });
   }
-  console.log(`  [${completed}/${runs.length}] ${model}: ${predictions.length} instances, priced=${Boolean(price)}`);
+  console.log(
+    `  [${completed}/${runs.length}] ${model} ${subset || '(single subset)'}: ${predictions.length} instances, priced=${Boolean(price)}`,
+  );
 }
 
 await mkdir(dirname(out), { recursive: true });
 await writeFile(out, `${rows.map((row) => JSON.stringify(row)).join('\n')}\n`);
 const priced = rows.filter((row) => row.priced).length;
 const estimated = rows.filter((row) => !row.output_tokens_measured).length;
+const instances = new Set(rows.map((row) => `${row.subset} ${row.instance_id}`)).size;
 console.log(`\nWrote ${rows.length} (prompt x model) rows to ${out}`);
+console.log(`  ${instances} distinct prompts across ${promptsBySubset.size} sub-scenario(s).`);
 console.log(`  ${priced} rows carry a real USD cost; ${rows.length - priced} models are unpriced and are excluded from cost math.`);
 console.log(`  ${estimated} rows have estimated output token counts (HELM recorded 0).`);
+if (duplicates > 0)
+  console.log(`  ${duplicates} duplicate (subset, instance, model) cells dropped (same model run under two decoding configs).`);
