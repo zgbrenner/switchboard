@@ -83,10 +83,10 @@ test('a transient persist failure does not permanently wedge the write queue', a
   const store = new AggregatePreferenceStore();
   const originalPersist = store.persist.bind(store);
   let failNext = true;
-  store.persist = async () => {
+  store.persist = () => {
     if (failNext) {
       failNext = false;
-      throw new Error('simulated transient failure');
+      return Promise.reject(new Error('simulated transient failure'));
     }
     return originalPersist();
   };
