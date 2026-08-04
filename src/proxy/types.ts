@@ -14,9 +14,7 @@ export interface ProxyUpstreamRoute {
 }
 
 export type ProxyTierRoutes = Partial<Record<QualityTier, ProxyUpstreamRoute>>;
-export type ProxyJudgeConfig =
-  | { type: 'deterministic' }
-  | { type: 'remote'; endpoint: string; token?: string; timeoutMs: number };
+export type ProxyJudgeConfig = { type: 'deterministic' } | { type: 'remote'; endpoint: string; token?: string; timeoutMs: number };
 
 export interface ProxyConfig {
   alias: string;
@@ -55,9 +53,7 @@ export interface ProxyConfigInput {
   session?: { maxSessions?: number; ttlMs?: number };
   humanMode?: 'stop' | 'continue';
   maxRequestBytes?: number;
-  judge?:
-    | { type?: 'deterministic' }
-    | { type: 'remote'; endpoint?: string; token?: string; tokenEnv?: string; timeoutMs?: number };
+  judge?: { type?: 'deterministic' } | { type: 'remote'; endpoint?: string; token?: string; tokenEnv?: string; timeoutMs?: number };
 }
 
 export interface ExtractedObservation {
