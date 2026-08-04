@@ -41,10 +41,7 @@ function fromJudge(action: RuntimeJudgeAction, input: RuntimeJudgeInput): Runtim
   return { ...base, action };
 }
 
-export async function coordinateRuntimeDecision(
-  judge: RuntimeJudge,
-  input: RuntimeJudgeInput,
-): Promise<CoordinatedRuntimeDecision> {
+export async function coordinateRuntimeDecision(judge: RuntimeJudge, input: RuntimeJudgeInput): Promise<CoordinatedRuntimeDecision> {
   if (input.deterministicDecision.action !== 'continue') {
     return { decision: input.deterministicDecision, source: 'deterministic' };
   }
