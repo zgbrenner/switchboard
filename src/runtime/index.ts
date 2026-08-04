@@ -1,5 +1,11 @@
 export { stableDigest, stableSerialize } from './digest.js';
-export { DEFAULT_RUNTIME_POLICY, evaluateRuntimePolicy, normalizeModelLadder, normalizeRuntimePolicy } from './policy.js';
+export {
+  DEFAULT_RUNTIME_POLICY,
+  evaluateRuntimeJudgeAction,
+  evaluateRuntimePolicy,
+  normalizeModelLadder,
+  normalizeRuntimePolicy,
+} from './policy.js';
 export { RuntimeSession, RuntimeSessionStore } from './session.js';
 export { detectRuntimeSignals, isVerifiedProgress } from './signals.js';
 export { normalizeRuntimeObservation } from './trajectory.js';
