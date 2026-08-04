@@ -3,6 +3,7 @@ import type { RuntimeDecision, RuntimePolicyConfig, RuntimePolicyState, RuntimeS
 
 const TIER_ORDER: QualityTier[] = ['fast', 'balanced', 'deep', 'max'];
 const EFFORT_ORDER: EffortLevel[] = ['low', 'medium', 'high', 'max'];
+type RuntimeEscalationRequest = 'continue' | 'raise_effort' | 'switch_model' | 'restart_clean' | 'escalate_human';
 
 export const DEFAULT_RUNTIME_POLICY: RuntimePolicyConfig = Object.freeze({
   maxRelativeCost: 10,
@@ -72,7 +73,11 @@ function decision(
   };
 }
 
-export function evaluateRuntimePolicy(state: RuntimePolicyState, signals: RuntimeSignal[], policy: RuntimePolicyConfig): RuntimeDecision {
+function budgetDecision(
+  state: RuntimePolicyState,
+  signals: RuntimeSignal[],
+  policy: RuntimePolicyConfig,
+): RuntimeDecision | undefined {
   if (state.relativeCost >= policy.maxRelativeCost) {
     return decision('stop_budget', signals, { reasonCodes: ['relative-cost-budget-exhausted'] });
   }
@@ -82,6 +87,21 @@ export function evaluateRuntimePolicy(state: RuntimePolicyState, signals: Runtim
       reasonCodes: ['context-budget-exhausted', 'restart-budget-exhausted'],
     });
   }
+  return undefined;
+}
+
+function switchRestartOrHuman(state: RuntimePolicyState, signals: RuntimeSignal[], policy: RuntimePolicyConfig): RuntimeDecision {
+  const tier = nextTier(state);
+  if (tier !== undefined && state.switches < policy.maxSwitches) return decision('switch_model', signals, { targetTier: tier });
+  if (state.restarts < policy.maxRestarts) return decision('restart_clean', signals);
+  return decision('escalate_human', signals, {
+    reasonCodes: [...signals.map((item) => item.code), 'runtime-intervention-budget-exhausted'],
+  });
+}
+
+export function evaluateRuntimePolicy(state: RuntimePolicyState, signals: RuntimeSignal[], policy: RuntimePolicyConfig): RuntimeDecision {
+  const budget = budgetDecision(state, signals, policy);
+  if (budget !== undefined) return budget;
   if (signals.length === 0) return decision('continue', signals, { reasonCodes: ['no-runtime-intervention-signal'] });
 
   const severe = signals.some((item) => item.severity === 'severe');
@@ -90,12 +110,29 @@ export function evaluateRuntimePolicy(state: RuntimePolicyState, signals: Runtim
 
   const effort = nextEffort(state.currentTier, state.currentEffort);
   if (effort !== undefined) return decision('raise_effort', signals, { targetEffort: effort });
+  return switchRestartOrHuman(state, signals, policy);
+}
 
-  const tier = nextTier(state);
-  if (tier !== undefined && state.switches < policy.maxSwitches) return decision('switch_model', signals, { targetTier: tier });
-
-  if (state.restarts < policy.maxRestarts) return decision('restart_clean', signals);
-  return decision('escalate_human', signals, {
-    reasonCodes: [...signals.map((item) => item.code), 'runtime-intervention-budget-exhausted'],
-  });
+export function evaluateRuntimeJudgeAction(
+  state: RuntimePolicyState,
+  requestedAction: RuntimeEscalationRequest,
+  signals: RuntimeSignal[],
+  policy: RuntimePolicyConfig,
+): RuntimeDecision {
+  const budget = budgetDecision(state, signals, policy);
+  if (budget !== undefined) return budget;
+  const reasonCodes = ['judge-escalation', `judge-requested-${requestedAction}`];
+  const judgeSignals = signals;
+  if (requestedAction === 'continue') return decision('continue', judgeSignals, { reasonCodes });
+  if (requestedAction === 'escalate_human') return decision('escalate_human', judgeSignals, { reasonCodes });
+  if (requestedAction === 'restart_clean') {
+    if (state.restarts < policy.maxRestarts) return decision('restart_clean', judgeSignals, { reasonCodes });
+    return decision('escalate_human', judgeSignals, { reasonCodes: [...reasonCodes, 'restart-budget-exhausted'] });
+  }
+  if (requestedAction === 'raise_effort') {
+    const effort = nextEffort(state.currentTier, state.currentEffort);
+    if (effort !== undefined) return decision('raise_effort', judgeSignals, { targetEffort: effort, reasonCodes });
+  }
+  const constrained = switchRestartOrHuman(state, judgeSignals, policy);
+  return { ...constrained, reasonCodes: [...reasonCodes, ...constrained.reasonCodes] };
 }

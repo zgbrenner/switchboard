@@ -1,0 +1,48 @@
+{
+  "alias": "switchboard",
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8788,
+    "tokenEnv": "SWITCHBOARD_PROXY_TOKEN"
+  },
+  "routes": {
+    "responses": {
+      "balanced": {
+        "baseUrl": "https://api.openai.com/v1",
+        "model": "gpt-5-mini",
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "reasoningEffort": true
+      },
+      "deep": {
+        "baseUrl": "https://api.openai.com/v1",
+        "model": "gpt-5.4",
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "reasoningEffort": true
+      }
+    },
+    "messages": {
+      "balanced": {
+        "baseUrl": "https://api.anthropic.com/v1",
+        "model": "claude-sonnet-4-5",
+        "apiKeyEnv": "ANTHROPIC_API_KEY"
+      },
+      "deep": {
+        "baseUrl": "https://api.anthropic.com/v1",
+        "model": "claude-opus-4-5",
+        "apiKeyEnv": "ANTHROPIC_API_KEY"
+      }
+    }
+  },
+  "runtimePolicy": {
+    "maxRelativeCost": 5,
+    "maxRestarts": 1
+  },
+  "session": {
+    "maxSessions": 256,
+    "ttlMs": 1800000
+  },
+  "judge": {
+    "type": "deterministic"
+  },
+  "humanMode": "stop"
+}

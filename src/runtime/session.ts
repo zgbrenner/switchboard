@@ -99,6 +99,17 @@ export class RuntimeSession {
     return { step, signals, decision, snapshot: this.snapshot() };
   }
 
+  reconcileDecision(decision: RuntimeDecision): RuntimeSessionSnapshot {
+    const previous = this.decisionsValue.at(-1);
+    if (previous === undefined || previous.action !== 'continue') {
+      throw new Error('Only the latest continue decision may be reconciled.');
+    }
+    const sequence = this.stepsValue.at(-1)?.sequence ?? this.totalStepsValue;
+    this.apply(decision, sequence);
+    this.decisionsValue[this.decisionsValue.length - 1] = decision;
+    return this.snapshot();
+  }
+
   snapshot(): RuntimeSessionSnapshot {
     this.touch();
     return {

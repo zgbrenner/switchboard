@@ -30,16 +30,20 @@
   "mcpName": "io.github.zgbrenner/switchboard",
   "type": "module",
   "bin": {
-    "switchboard-mcp": "mcp/index.mjs"
+    "switchboard-mcp": "mcp/index.mjs",
+    "switchboard-proxy": "proxy/index.mjs"
   },
   "exports": {
     ".": "./mcp/server.mjs",
     "./router": "./dist/js/router/route.js",
     "./runtime": "./dist/js/runtime/index.js",
+    "./judge": "./dist/js/judge/index.js",
+    "./proxy": "./dist/js/proxy/index.js",
     "./package.json": "./package.json"
   },
   "files": [
     "mcp/",
+    "proxy/",
     "dist/js/",
     "server.json",
     "README.md",
@@ -63,6 +67,7 @@
     "mcp:start": "node mcp/index.mjs --transport=stdio",
     "mcp:http": "node mcp/index.mjs --transport=http",
     "mcp:smoke": "node scripts/mcp-smoke.mjs",
+    "proxy:start": "npm run build && node proxy/index.mjs",
     "verify": "npm run typecheck && npm run lint && npm run format:check && npm test && npm run build && npm run mcp:smoke",
     "prepack": "npm run build",
     "prepublishOnly": "npm run verify"
