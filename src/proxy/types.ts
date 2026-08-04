@@ -9,6 +9,7 @@ export interface ProxyUpstreamRoute {
   model: string;
   apiKey?: string;
   headers: Readonly<Record<string, string>>;
+  reasoningEffort: boolean;
   inputCostPerMillion: number;
   outputCostPerMillion: number;
 }
@@ -42,6 +43,7 @@ export interface ProxyConfigInput {
             apiKey?: string;
             apiKeyEnv?: string;
             headers?: Readonly<Record<string, string>>;
+            reasoningEffort?: boolean;
             inputCostPerMillion?: number;
             outputCostPerMillion?: number;
           }
