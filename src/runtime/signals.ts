@@ -60,14 +60,7 @@ export function detectRuntimeSignals(steps: RuntimeEvidenceStep[], policy: Runti
     step.status === 'failure' ? `failure:${step.errorClass ?? '[unclassified]'}` : `status:${step.status}`,
   );
   if (latest?.status === 'failure' && errorRun.length >= policy.errorRepeatThreshold) {
-    result.push(
-      signal(
-        'repeated-error-class',
-        'severe',
-        `The same error class repeated ${errorRun.length} times.`,
-        errorRun,
-      ),
-    );
+    result.push(signal('repeated-error-class', 'severe', `The same error class repeated ${errorRun.length} times.`, errorRun));
   }
 
   const pingCount = Math.max(4, policy.pingPongThreshold);
@@ -81,24 +74,17 @@ export function detectRuntimeSignals(steps: RuntimeEvidenceStep[], policy: Runti
 
   const cycleCount = Math.max(4, policy.rewriteRetestThreshold);
   const cycle = done.slice(-cycleCount);
-  if (cycle.length >= 4) {
-    const tail = cycle.slice(-4);
-    const rewriteRetest =
-      tail[0]?.kind === 'write' &&
-      tail[1]?.kind === 'verify' &&
-      tail[1]?.status === 'failure' &&
-      tail[2]?.kind === 'write' &&
-      tail[3]?.kind === 'verify' &&
-      tail[3]?.status === 'failure';
+  if (cycle.length === cycleCount) {
+    const rewriteRetest = cycle.every((step, index) =>
+      index % 2 === 0 ? step.kind === 'write' : step.kind === 'verify' && step.status === 'failure',
+    );
     if (rewriteRetest)
-      result.push(signal('rewrite-retest-cycle', 'severe', 'Repeated rewrites are followed by failed verification.', tail));
+      result.push(signal('rewrite-retest-cycle', 'severe', 'Repeated rewrites are followed by failed verification.', cycle));
   }
 
   const failureRun = trailingRun(done, (step) => (step.status === 'failure' ? 'failure' : 'other'));
   if (latest?.status === 'failure' && failureRun.length >= policy.maxConsecutiveFailures) {
-    result.push(
-      signal('consecutive-failures', 'warning', `${failureRun.length} consecutive completed steps failed.`, failureRun),
-    );
+    result.push(signal('consecutive-failures', 'warning', `${failureRun.length} consecutive completed steps failed.`, failureRun));
   }
 
   let stepsSinceProgress = 0;
