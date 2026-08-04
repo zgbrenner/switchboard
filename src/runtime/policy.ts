@@ -72,17 +72,12 @@ function decision(
   };
 }
 
-export function evaluateRuntimePolicy(
-  state: RuntimePolicyState,
-  signals: RuntimeSignal[],
-  policy: RuntimePolicyConfig,
-): RuntimeDecision {
+export function evaluateRuntimePolicy(state: RuntimePolicyState, signals: RuntimeSignal[], policy: RuntimePolicyConfig): RuntimeDecision {
   if (state.relativeCost >= policy.maxRelativeCost) {
     return decision('stop_budget', signals, { reasonCodes: ['relative-cost-budget-exhausted'] });
   }
   if (state.contextTokens >= policy.maxContextTokens) {
-    if (state.restarts < policy.maxRestarts)
-      return decision('restart_clean', signals, { reasonCodes: ['context-budget-exhausted'] });
+    if (state.restarts < policy.maxRestarts) return decision('restart_clean', signals, { reasonCodes: ['context-budget-exhausted'] });
     return decision('escalate_human', signals, {
       reasonCodes: ['context-budget-exhausted', 'restart-budget-exhausted'],
     });
@@ -97,8 +92,7 @@ export function evaluateRuntimePolicy(
   if (effort !== undefined) return decision('raise_effort', signals, { targetEffort: effort });
 
   const tier = nextTier(state);
-  if (tier !== undefined && state.switches < policy.maxSwitches)
-    return decision('switch_model', signals, { targetTier: tier });
+  if (tier !== undefined && state.switches < policy.maxSwitches) return decision('switch_model', signals, { targetTier: tier });
 
   if (state.restarts < policy.maxRestarts) return decision('restart_clean', signals);
   return decision('escalate_human', signals, {
