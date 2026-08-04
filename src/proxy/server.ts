@@ -200,13 +200,7 @@ export function createSwitchboardProxyServer(
       );
     } catch (error) {
       if (prepared) {
-        controller.recordUsage(
-          prepared.sessionId,
-          prepared.upstream,
-          { inputTokens: 0, outputTokens: 0 },
-          false,
-          'ProxyError',
-        );
+        controller.recordUsage(prepared.sessionId, prepared.upstream, { inputTokens: 0, outputTokens: 0 }, false, 'ProxyError');
       }
       const status = error instanceof RangeError ? 413 : error instanceof SyntaxError || error instanceof TypeError ? 400 : 502;
       json(
