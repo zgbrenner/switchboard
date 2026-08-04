@@ -10,8 +10,7 @@ function number(value: unknown): number {
 
 export function usageFromJson(wire: ProxyWire, value: unknown): ProxyUsage {
   const root = asRecord(value);
-  const usage =
-    asRecord(root?.usage) ?? asRecord(asRecord(root?.response)?.usage) ?? asRecord(asRecord(root?.message)?.usage);
+  const usage = asRecord(root?.usage) ?? asRecord(asRecord(root?.response)?.usage) ?? asRecord(asRecord(root?.message)?.usage);
   if (!usage) return { inputTokens: 0, outputTokens: 0 };
   if (wire === 'responses') {
     return {
