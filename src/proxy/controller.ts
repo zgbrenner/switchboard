@@ -2,7 +2,7 @@ import { coordinateRuntimeDecision } from '../judge/coordinator.js';
 import { DeterministicRuntimeJudge } from '../judge/deterministic.js';
 import { RuntimeSession } from '../runtime/session.js';
 import type { RuntimeDecision, RuntimeObservationResult } from '../runtime/types.js';
-import type { QualityTier } from '../shared/types.js';
+import type { EffortLevel, QualityTier } from '../shared/types.js';
 import { extractProxyRequest, sanitizeForCleanRestart, stableProxySessionId } from './wire.js';
 import type {
   ProxyConfig,
@@ -17,6 +17,9 @@ import type {
 } from './types.js';
 
 const TIERS: QualityTier[] = ['fast', 'balanced', 'deep', 'max'];
+const EFFORTS: EffortLevel[] = ['low', 'medium', 'high', 'max'];
+const DEFAULT_EFFORT: Record<QualityTier, EffortLevel> = { fast: 'low', balanced: 'medium', deep: 'high', max: 'max' };
+const EFFORT_CEILING: Record<QualityTier, EffortLevel> = { fast: 'medium', balanced: 'high', deep: 'high', max: 'max' };
 
 interface ProxySessionRecord {
   runtime: RuntimeSession;
@@ -35,15 +38,25 @@ function continueDecision(): RuntimeDecision {
   };
 }
 
+function configuredLadder(routes: ProxyTierRoutes, floor: QualityTier): QualityTier[] {
+  const ladder = TIERS.filter((tier) => TIERS.indexOf(tier) >= TIERS.indexOf(floor) && routes[tier] !== undefined);
+  if (ladder.length === 0) throw new Error(`No configured upstream satisfies the ${floor} tier.`);
+  return ladder;
+}
+
 function selectUpstream(routes: ProxyTierRoutes, tier: QualityTier): ProxyUpstreamRoute {
-  const start = TIERS.indexOf(tier);
-  for (let index = start; index < TIERS.length; index++) {
-    const candidateTier = TIERS[index];
-    if (candidateTier !== undefined && routes[candidateTier] !== undefined) {
-      return routes[candidateTier] as ProxyUpstreamRoute;
-    }
-  }
-  throw new Error(`No configured upstream satisfies the ${tier} tier.`);
+  const upstream = routes[tier];
+  if (upstream === undefined) throw new Error(`No upstream is configured for the active ${tier} tier.`);
+  return upstream;
+}
+
+function effortAtLeast(left: EffortLevel, right: EffortLevel): EffortLevel {
+  return EFFORTS.indexOf(left) >= EFFORTS.indexOf(right) ? left : right;
+}
+
+function initialEffort(wire: ProxyWire, tier: QualityTier, preflightEffort: EffortLevel, upstream: ProxyUpstreamRoute): EffortLevel {
+  if (wire === 'responses' && upstream.reasoningEffort) return effortAtLeast(preflightEffort, DEFAULT_EFFORT[tier]);
+  return EFFORT_CEILING[tier];
 }
 
 function rewriteBody(
@@ -55,7 +68,7 @@ function rewriteBody(
 ): Record<string, unknown> {
   const cleaned =
     decision.action === 'restart_clean' || decision.action === 'switch_model' ? sanitizeForCleanRestart(wire, body) : { ...body };
-  if (wire === 'responses') {
+  if (wire === 'responses' && upstream.reasoningEffort) {
     const existing =
       cleaned.reasoning && typeof cleaned.reasoning === 'object' && !Array.isArray(cleaned.reasoning)
         ? (cleaned.reasoning as Record<string, unknown>)
@@ -133,13 +146,14 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     });
     const routeMap = config.routes[input.wire];
     if (!routeMap) throw new Error(`No ${input.wire} routes are configured.`);
-    const ladder = TIERS.filter((tier) => TIERS.indexOf(tier) >= TIERS.indexOf(preflight.tier) && routeMap[tier] !== undefined);
-    if (!ladder.includes(preflight.tier)) ladder.unshift(preflight.tier);
+    const ladder = configuredLadder(routeMap, preflight.tier);
+    const initialTier = ladder[0] as QualityTier;
+    const initialUpstream = selectUpstream(routeMap, initialTier);
     const runtime = new RuntimeSession(
       {
         id: sessionId,
-        initialTier: preflight.tier,
-        initialEffort: preflight.effort,
+        initialTier,
+        initialEffort: initialEffort(input.wire, initialTier, preflight.effort, initialUpstream),
         modelLadder: ladder,
         policy: config.runtimePolicy,
       },
@@ -180,6 +194,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
         snapshot: latest.snapshot,
         signals: latest.signals,
         deterministicDecision: latest.decision,
+        policy: record.runtime.policy,
       });
       judgeSource = coordinated.source;
       if (coordinated.decision.action !== latest.decision.action) {
