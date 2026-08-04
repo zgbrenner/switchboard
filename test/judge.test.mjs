@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DeterministicRuntimeJudge, RemoteRuntimeJudge, coordinateRuntimeDecision } from '../.test-dist/judge/index.js';
+import { DEFAULT_RUNTIME_POLICY } from '../.test-dist/runtime/index.js';
 
+const policy = { ...DEFAULT_RUNTIME_POLICY };
 const snapshot = {
   id: 'session-hash',
   initialTier: 'balanced',
@@ -49,6 +51,7 @@ test('deterministic judge preserves the deterministic decision', async () => {
     snapshot,
     signals,
     deterministicDecision: deterministicContinue,
+    policy,
   });
   assert.equal(result.decision.action, 'continue');
   assert.equal(result.source, 'deterministic');
@@ -63,13 +66,13 @@ test('a non-continue deterministic decision is authoritative and judge is not ca
     },
   };
   const deterministic = { ...deterministicContinue, action: 'switch_model', targetTier: 'deep' };
-  const result = await coordinateRuntimeDecision(judge, { snapshot, signals, deterministicDecision: deterministic });
+  const result = await coordinateRuntimeDecision(judge, { snapshot, signals, deterministicDecision: deterministic, policy });
   assert.equal(calls, 0);
   assert.equal(result.decision.action, 'switch_model');
   assert.equal(result.source, 'deterministic');
 });
 
-test('judge may escalate a deterministic continue but cannot choose an unavailable tier', async () => {
+test('judge escalation is constrained to the next configured tier', async () => {
   const judge = {
     evaluate() {
       return Promise.resolve({ action: 'switch_model', reason: 'trajectory looks stuck' });
@@ -79,10 +82,50 @@ test('judge may escalate a deterministic continue but cannot choose an unavailab
     snapshot,
     signals,
     deterministicDecision: deterministicContinue,
+    policy,
   });
   assert.equal(result.decision.action, 'switch_model');
   assert.equal(result.decision.targetTier, 'deep');
   assert.equal(result.source, 'judge');
+});
+
+test('judge cannot exceed effort, switch, restart, or cost budgets', async () => {
+  const restartJudge = { evaluate: () => Promise.resolve({ action: 'restart_clean', reason: 'restart' }) };
+  const noRestart = await coordinateRuntimeDecision(restartJudge, {
+    snapshot,
+    signals,
+    deterministicDecision: deterministicContinue,
+    policy: { ...policy, maxRestarts: 0 },
+  });
+  assert.equal(noRestart.decision.action, 'escalate_human');
+
+  const switchJudge = { evaluate: () => Promise.resolve({ action: 'switch_model', reason: 'switch' }) };
+  const noSwitch = await coordinateRuntimeDecision(switchJudge, {
+    snapshot: { ...snapshot, switches: 1 },
+    signals,
+    deterministicDecision: deterministicContinue,
+    policy: { ...policy, maxSwitches: 1 },
+  });
+  assert.equal(noSwitch.decision.action, 'restart_clean');
+
+  const effortJudge = { evaluate: () => Promise.resolve({ action: 'raise_effort', reason: 'think harder' }) };
+  const ceiling = await coordinateRuntimeDecision(effortJudge, {
+    snapshot: { ...snapshot, currentTier: 'deep', currentEffort: 'high', modelLadder: ['deep', 'max'] },
+    signals,
+    deterministicDecision: deterministicContinue,
+    policy,
+  });
+  assert.equal(ceiling.decision.action, 'switch_model');
+  assert.equal(ceiling.decision.targetTier, 'max');
+
+  const budget = await coordinateRuntimeDecision(restartJudge, {
+    snapshot: { ...snapshot, relativeCost: policy.maxRelativeCost },
+    signals,
+    deterministicDecision: deterministicContinue,
+    policy,
+  });
+  assert.equal(budget.decision.action, 'stop_budget');
+  assert.equal(budget.source, 'deterministic');
 });
 
 test('remote judge sends only bounded structured evidence and fails open on errors', async () => {
@@ -100,7 +143,7 @@ test('remote judge sends only bounded structured evidence and fails open on erro
       );
     },
   });
-  const verdict = await remote.evaluate({ snapshot, signals, deterministicDecision: deterministicContinue });
+  const verdict = await remote.evaluate({ snapshot, signals, deterministicDecision: deterministicContinue, policy });
   assert.equal(verdict.action, 'restart_clean');
   const serialized = JSON.stringify(sent);
   assert.ok(!serialized.includes('SECRET RAW OUTPUT'));
@@ -116,6 +159,7 @@ test('remote judge sends only bounded structured evidence and fails open on erro
     snapshot,
     signals,
     deterministicDecision: deterministicContinue,
+    policy,
   });
   assert.equal(result.decision.action, 'continue');
   assert.equal(result.source, 'fail-open');
@@ -134,6 +178,7 @@ test('remote judge hashes even caller-supplied session identifiers', async () =>
     snapshot: { ...snapshot, id: 'customer-case-very-sensitive' },
     signals,
     deterministicDecision: deterministicContinue,
+    policy,
   });
   assert.ok(!sent.includes('customer-case-very-sensitive'));
 });
