@@ -159,8 +159,7 @@ export class RuntimeSessionStore {
     this.maxSessions = options.maxSessions ?? 256;
     this.ttlMs = options.ttlMs ?? 30 * 60 * 1000;
     this.now = options.now ?? Date.now;
-    if (!Number.isInteger(this.maxSessions) || this.maxSessions < 1)
-      throw new TypeError('maxSessions must be a positive integer.');
+    if (!Number.isInteger(this.maxSessions) || this.maxSessions < 1) throw new TypeError('maxSessions must be a positive integer.');
     if (!Number.isFinite(this.ttlMs) || this.ttlMs < 1) throw new TypeError('ttlMs must be a positive number.');
   }
 
