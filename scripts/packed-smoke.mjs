@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { access } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { createInterface } from 'node:readline';
+import { pathToFileURL } from 'node:url';
 
 const packageRoot = resolve(process.argv[2] ?? '');
 if (!process.argv[2]) throw new Error('Usage: node scripts/packed-smoke.mjs <installed-package-root>');
@@ -34,7 +36,11 @@ try {
     jsonrpc: '2.0',
     id: 1,
     method: 'initialize',
-    params: { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'packed-smoke', version: '1.0.0' } },
+    params: {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'packed-smoke', version: '1.0.0' },
+    },
   });
   assert.equal(initialized.result.serverInfo.version, '0.7.0');
   child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
@@ -60,7 +66,41 @@ try {
   assert.equal(prepared.result.structuredContent.stages.compression.status, 'applied');
   assert.equal(prepared.result.structuredContent.stages.brevity.status, 'applied');
   assert.match(prepared.result.structuredContent.preparedPrompt, /switchboard:brevity:end/);
-  console.log('Packed Switchboard artifact launched and executed prepare_request successfully.');
+
+  const runtime = await import(pathToFileURL(resolve(packageRoot, 'dist/js/runtime/index.js')));
+  const judge = await import(pathToFileURL(resolve(packageRoot, 'dist/js/judge/index.js')));
+  const proxyModule = await import(pathToFileURL(resolve(packageRoot, 'dist/js/proxy/index.js')));
+  assert.equal(
+    new runtime.RuntimeSession({ id: 'smoke', initialTier: 'balanced', initialEffort: 'medium' }).snapshot().currentTier,
+    'balanced',
+  );
+  assert.ok(new judge.DeterministicRuntimeJudge());
+  const proxyConfig = proxyModule.validateProxyConfig({
+    listen: { host: '127.0.0.1', port: 0 },
+    routes: {
+      responses: {
+        balanced: { baseUrl: 'http://127.0.0.1:9/v1', model: 'smoke-model' },
+      },
+    },
+  });
+  const proxy = proxyModule.createSwitchboardProxyServer(proxyConfig, {
+    route: async () => ({
+      tier: 'balanced',
+      effort: 'medium',
+      capabilities: { web: false, files: false, vision: false, longContext: false, code: false },
+      confidence: 0.5,
+      shouldUseJudge: false,
+      reasons: [],
+      scores: { fast: 0, balanced: 1, deep: 0, max: 0 },
+      taskCategories: [],
+    }),
+  });
+  const address = await proxy.listen();
+  const health = await fetch(`http://127.0.0.1:${address.port}/health`);
+  assert.equal(health.status, 200);
+  await proxy.close();
+  await access(resolve(packageRoot, 'proxy/index.mjs'));
+  console.log('Packed Switchboard artifact launched MCP and imported runtime, judge, and proxy exports successfully.');
 } finally {
   child.stdin.end();
   child.kill('SIGTERM');
