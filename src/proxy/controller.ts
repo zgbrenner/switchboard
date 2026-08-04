@@ -53,7 +53,8 @@ function rewriteBody(
   decision: RuntimeDecision,
   effort: string,
 ): Record<string, unknown> {
-  const cleaned = decision.action === 'restart_clean' || decision.action === 'switch_model' ? sanitizeForCleanRestart(wire, body) : { ...body };
+  const cleaned =
+    decision.action === 'restart_clean' || decision.action === 'switch_model' ? sanitizeForCleanRestart(wire, body) : { ...body };
   if (wire === 'responses') {
     const existing =
       cleaned.reasoning && typeof cleaned.reasoning === 'object' && !Array.isArray(cleaned.reasoning)
