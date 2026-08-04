@@ -107,8 +107,7 @@ export function extractOpenAIResponses(body: Record<string, unknown>): Extracted
     }
   }
   const prompt = [...messages].reverse().find((message) => message.role === 'user')?.text ?? '';
-  const sessionHint =
-    typeof body.prompt_cache_key === 'string' && body.prompt_cache_key.trim() ? body.prompt_cache_key.trim() : undefined;
+  const sessionHint = typeof body.prompt_cache_key === 'string' && body.prompt_cache_key.trim() ? body.prompt_cache_key.trim() : undefined;
   return {
     prompt,
     context: contextFromMessages(messages),
