@@ -2,6 +2,7 @@ export { validateProxyConfig } from './config.js';
 export { createProxyController } from './controller.js';
 export { createProxyJudge } from './judge.js';
 export { createSwitchboardProxyServer } from './server.js';
+export { normalizeProxySessionId } from './session-id.js';
 export { usageFromJson, usageFromSse } from './usage.js';
 export {
   extractAnthropicMessages,
