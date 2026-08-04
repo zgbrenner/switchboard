@@ -112,6 +112,17 @@ test('repeated error classes, ping-pong, and rewrite-retest cycles are detected'
   assert.ok(detectRuntimeSignals(rewriteRetest, DEFAULT_RUNTIME_POLICY).some((signal) => signal.code === 'rewrite-retest-cycle'));
 });
 
+test('a successful completed step interrupts a repeated-error streak', () => {
+  const steps = [
+    observation(1, { status: 'failure', errorClass: 'TypeError', output: 'red 1' }),
+    observation(2, { status: 'success', output: 'green' }),
+    observation(3, { status: 'failure', errorClass: 'TypeError', output: 'red 2' }),
+    observation(4, { status: 'failure', errorClass: 'TypeError', output: 'red 3' }),
+  ];
+  const signals = detectRuntimeSignals(steps, { ...DEFAULT_RUNTIME_POLICY, errorRepeatThreshold: 3 });
+  assert.ok(!signals.some((signal) => signal.code === 'repeated-error-class'));
+});
+
 test('only successful execute or verify steps reset the no-progress counter', () => {
   const steps = [
     observation(1, { kind: 'verify', status: 'success', output: 'pass' }),
@@ -211,7 +222,7 @@ test('strongest-tier failure produces clean restart instructions and then human 
   assert.equal(restart.decision.preserveArtifacts, true);
   assert.equal(restart.decision.dropNarration, true);
 
-  session.observe({
+  const afterRestart = session.observe({
     tool: 'shell',
     kind: 'verify',
     status: 'failure',
@@ -219,6 +230,7 @@ test('strongest-tier failure produces clean restart instructions and then human 
     output: 'red 3',
     errorClass: 'TypeError',
   });
+  assert.equal(afterRestart.decision.action, 'continue');
   const human = session.observe({
     tool: 'shell',
     kind: 'verify',
