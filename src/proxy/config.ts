@@ -30,6 +30,7 @@ function resolveSecret(value: string | undefined, envName: string | undefined, e
 }
 
 function normalizeRoute(
+  wire: ProxyWire,
   route: NonNullable<NonNullable<ProxyConfigInput['routes']>[ProxyWire]>[QualityTier],
   env: NodeJS.ProcessEnv,
   label: string,
@@ -45,11 +46,16 @@ function normalizeRoute(
     if (!key.trim() || typeof value !== 'string') throw new TypeError(`${label}.headers must contain string values.`);
     headers[key.toLowerCase()] = value;
   }
+  const reasoningEffort = route.reasoningEffort ?? false;
+  if (reasoningEffort && wire !== 'responses') {
+    throw new TypeError(`${label}.reasoningEffort is supported only on the Responses wire.`);
+  }
   return {
     baseUrl: url.toString().replace(/\/$/u, ''),
     model: route.model.trim(),
     ...(apiKey === undefined ? {} : { apiKey }),
     headers,
+    reasoningEffort,
     inputCostPerMillion: nonNegative(route.inputCostPerMillion ?? 0, `${label}.inputCostPerMillion`),
     outputCostPerMillion: nonNegative(route.outputCostPerMillion ?? 0, `${label}.outputCostPerMillion`),
   };
@@ -75,7 +81,7 @@ export function validateProxyConfig(input: ProxyConfigInput, env: NodeJS.Process
     for (const tier of TIERS) {
       const rawRoute = rawWire[tier];
       if (rawRoute === undefined) continue;
-      normalized[tier] = normalizeRoute(rawRoute, env, `routes.${wire}.${tier}`);
+      normalized[tier] = normalizeRoute(wire, rawRoute, env, `routes.${wire}.${tier}`);
       routeCount++;
     }
     if (Object.keys(normalized).length > 0) routes[wire] = normalized;
