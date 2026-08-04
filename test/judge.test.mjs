@@ -1,10 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  DeterministicRuntimeJudge,
-  RemoteRuntimeJudge,
-  coordinateRuntimeDecision,
-} from '../.test-dist/judge/index.js';
+import { DeterministicRuntimeJudge, RemoteRuntimeJudge, coordinateRuntimeDecision } from '../.test-dist/judge/index.js';
 
 const snapshot = {
   id: 'session-hash',
@@ -39,9 +35,7 @@ const snapshot = {
   createdAt: 1,
   lastAccessedAt: 1,
 };
-const signals = [
-  { code: 'consecutive-failures', severity: 'warning', detail: '3 failures', evidenceIds: ['step-hash'] },
-];
+const signals = [{ code: 'consecutive-failures', severity: 'warning', detail: '3 failures', evidenceIds: ['step-hash'] }];
 const deterministicContinue = {
   action: 'continue',
   reasonCodes: ['intervention-hysteresis'],
