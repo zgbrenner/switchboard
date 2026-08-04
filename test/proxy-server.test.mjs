@@ -84,7 +84,7 @@ test('proxy server authenticates, forwards Responses requests, and exposes priva
 });
 
 test('streaming responses pass through while usage is metered asynchronously', async () => {
-  const upstream = createServer(async (_request, response) => {
+  const upstream = createServer((_request, response) => {
     response.writeHead(200, { 'content-type': 'text/event-stream' });
     response.write('data: {"type":"response.completed","response":{"usage":{"input_tokens":100,"output_tokens":20}}}\n\n');
     response.end('data: [DONE]\n\n');
