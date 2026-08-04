@@ -3,6 +3,7 @@ import { DeterministicRuntimeJudge } from '../judge/deterministic.js';
 import { RuntimeSession } from '../runtime/session.js';
 import type { RuntimeDecision, RuntimeObservationResult } from '../runtime/types.js';
 import type { EffortLevel, QualityTier } from '../shared/types.js';
+import { normalizeProxySessionId } from './session-id.js';
 import { extractProxyRequest, sanitizeForCleanRestart, stableProxySessionId } from './wire.js';
 import type {
   ProxyConfig,
@@ -173,13 +174,15 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     if (input.body.model !== config.alias) throw new TypeError(`Proxy model must be the configured alias ${config.alias}.`);
     const extracted = extractProxyRequest(input.wire, input.body);
     const explicit = input.headers['x-switchboard-session'];
-    const sessionId = stableProxySessionId({
-      ...(explicit === undefined ? {} : { explicit }),
-      ...(extracted.sessionHint === undefined ? {} : { hint: extracted.sessionHint }),
-      wire: input.wire,
-      prompt: extracted.prompt,
-      ...(input.clientFingerprint === undefined ? {} : { clientFingerprint: input.clientFingerprint }),
-    });
+    const sessionId = normalizeProxySessionId(
+      stableProxySessionId({
+        ...(explicit === undefined ? {} : { explicit }),
+        ...(extracted.sessionHint === undefined ? {} : { hint: extracted.sessionHint }),
+        wire: input.wire,
+        prompt: extracted.prompt,
+        ...(input.clientFingerprint === undefined ? {} : { clientFingerprint: input.clientFingerprint }),
+      }),
+    );
     const record = await getOrCreate(input, sessionId, extracted.prompt, extracted.context);
     let latest: RuntimeObservationResult | undefined;
     let judgeSource: ProxyPreparedRequest['judgeSource'] = 'deterministic';
