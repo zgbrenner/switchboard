@@ -95,9 +95,9 @@ test('config rejects a non-loopback bind without a token and requires routes', (
 test('judge escalation is reconciled into session state exactly once', async () => {
   let calls = 0;
   const judge = {
-    async evaluate() {
+    evaluate() {
       calls++;
-      return { action: 'switch_model', reason: 'stuck' };
+      return Promise.resolve({ action: 'switch_model', reason: 'stuck' });
     },
   };
   const warningConfig = validateProxyConfig({
