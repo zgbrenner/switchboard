@@ -63,9 +63,9 @@ test('deterministic judge preserves the deterministic decision', async () => {
 test('a non-continue deterministic decision is authoritative and judge is not called', async () => {
   let calls = 0;
   const judge = {
-    async evaluate() {
+    evaluate() {
       calls++;
-      return { action: 'continue', reason: 'demote' };
+      return Promise.resolve({ action: 'continue', reason: 'demote' });
     },
   };
   const deterministic = { ...deterministicContinue, action: 'switch_model', targetTier: 'deep' };
@@ -77,8 +77,8 @@ test('a non-continue deterministic decision is authoritative and judge is not ca
 
 test('judge may escalate a deterministic continue but cannot choose an unavailable tier', async () => {
   const judge = {
-    async evaluate() {
-      return { action: 'switch_model', reason: 'trajectory looks stuck' };
+    evaluate() {
+      return Promise.resolve({ action: 'switch_model', reason: 'trajectory looks stuck' });
     },
   };
   const result = await coordinateRuntimeDecision(judge, {
@@ -96,12 +96,14 @@ test('remote judge sends only bounded structured evidence and fails open on erro
   const remote = new RemoteRuntimeJudge({
     endpoint: 'https://judge.invalid/evaluate',
     timeoutMs: 50,
-    fetch: async (_url, init) => {
+    fetch: (_url, init) => {
       sent = JSON.parse(init.body);
-      return new Response(JSON.stringify({ action: 'restart_clean', reason: 'stuck' }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+      return Promise.resolve(
+        new Response(JSON.stringify({ action: 'restart_clean', reason: 'stuck' }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
     },
   });
   const verdict = await remote.evaluate({ snapshot, signals, deterministicDecision: deterministicContinue });
@@ -114,9 +116,7 @@ test('remote judge sends only bounded structured evidence and fails open on erro
   const broken = new RemoteRuntimeJudge({
     endpoint: 'https://judge.invalid/evaluate',
     timeoutMs: 10,
-    fetch: async () => {
-      throw new Error('offline');
-    },
+    fetch: () => Promise.reject(new Error('offline')),
   });
   const result = await coordinateRuntimeDecision(broken, {
     snapshot,
@@ -131,9 +131,9 @@ test('remote judge hashes even caller-supplied session identifiers', async () =>
   let sent;
   const remote = new RemoteRuntimeJudge({
     endpoint: 'https://judge.invalid/evaluate',
-    fetch: async (_url, init) => {
+    fetch: (_url, init) => {
       sent = init.body;
-      return new Response(JSON.stringify({ action: 'continue', reason: 'continue' }), { status: 200 });
+      return Promise.resolve(new Response(JSON.stringify({ action: 'continue', reason: 'continue' }), { status: 200 }));
     },
   });
   await remote.evaluate({
