@@ -10,12 +10,14 @@
       "balanced": {
         "baseUrl": "https://api.openai.com/v1",
         "model": "gpt-5-mini",
-        "apiKeyEnv": "OPENAI_API_KEY"
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "reasoningEffort": true
       },
       "deep": {
         "baseUrl": "https://api.openai.com/v1",
         "model": "gpt-5.4",
-        "apiKeyEnv": "OPENAI_API_KEY"
+        "apiKeyEnv": "OPENAI_API_KEY",
+        "reasoningEffort": true
       }
     },
     "messages": {
