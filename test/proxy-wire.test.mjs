@@ -70,9 +70,18 @@ test('clean restart keeps artifacts and tool facts while dropping narration and 
       { type: 'function_call_output', call_id: 'c1', output: 'real result' },
     ],
   });
-  assert.equal(responses.input.some((item) => item.type === 'reasoning'), false);
-  assert.equal(responses.input.some((item) => item.role === 'assistant'), false);
-  assert.equal(responses.input.some((item) => item.type === 'function_call_output'), true);
+  assert.equal(
+    responses.input.some((item) => item.type === 'reasoning'),
+    false,
+  );
+  assert.equal(
+    responses.input.some((item) => item.role === 'assistant'),
+    false,
+  );
+  assert.equal(
+    responses.input.some((item) => item.type === 'function_call_output'),
+    true,
+  );
 
   const messages = sanitizeForCleanRestart('messages', {
     model: 'switchboard',
