@@ -86,10 +86,7 @@ test('config rejects a non-loopback bind without a token and requires routes', (
       }),
     /token/i,
   );
-  assert.throws(
-    () => validateProxyConfig({ listen: { host: '127.0.0.1', port: 8788 }, routes: {} }),
-    /route/i,
-  );
+  assert.throws(() => validateProxyConfig({ listen: { host: '127.0.0.1', port: 8788 }, routes: {} }), /route/i);
 });
 
 test('judge escalation is reconciled into session state exactly once', async () => {
