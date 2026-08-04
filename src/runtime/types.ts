@@ -10,13 +10,7 @@ export type RuntimeSignalCode =
   | 'rewrite-retest-cycle'
   | 'consecutive-failures'
   | 'steps-since-progress';
-export type RuntimeDecisionAction =
-  | 'continue'
-  | 'raise_effort'
-  | 'switch_model'
-  | 'restart_clean'
-  | 'escalate_human'
-  | 'stop_budget';
+export type RuntimeDecisionAction = 'continue' | 'raise_effort' | 'switch_model' | 'restart_clean' | 'escalate_human' | 'stop_budget';
 
 export interface RuntimeObservationInput {
   sequence?: number;
