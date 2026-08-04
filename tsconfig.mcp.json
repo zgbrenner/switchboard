@@ -3,6 +3,6 @@
   "compilerOptions": {
     "outDir": "dist/js"
   },
-  "include": ["src/shared/types.ts", "src/router/**/*.ts"],
+  "include": ["src/**/*.ts"],
   "exclude": ["dist", ".test-dist"]
 }
