@@ -19,12 +19,7 @@ function nonNegative(value: number, name: string): number {
   return value;
 }
 
-function resolveSecret(
-  value: string | undefined,
-  envName: string | undefined,
-  env: NodeJS.ProcessEnv,
-  name: string,
-): string | undefined {
+function resolveSecret(value: string | undefined, envName: string | undefined, env: NodeJS.ProcessEnv, name: string): string | undefined {
   if (value !== undefined && envName !== undefined) {
     throw new TypeError(`${name} must use either a literal or an environment variable, not both.`);
   }
@@ -89,11 +84,7 @@ export function validateProxyConfig(input: ProxyConfigInput, env: NodeJS.Process
 
   const maxSessions = positiveInteger(input.session?.maxSessions ?? 256, 'session.maxSessions', 10_000);
   const ttlMs = positiveInteger(input.session?.ttlMs ?? 30 * 60 * 1000, 'session.ttlMs');
-  const maxRequestBytes = positiveInteger(
-    input.maxRequestBytes ?? 16 * 1024 * 1024,
-    'maxRequestBytes',
-    64 * 1024 * 1024,
-  );
+  const maxRequestBytes = positiveInteger(input.maxRequestBytes ?? 16 * 1024 * 1024, 'maxRequestBytes', 64 * 1024 * 1024);
   const rawJudge = input.judge;
   let judge: ProxyConfig['judge'] = { type: 'deterministic' };
   if (rawJudge?.type === 'remote') {
