@@ -1,4 +1,4 @@
-import type { RuntimeDecision, RuntimeSessionSnapshot, RuntimeSignal } from '../runtime/types.js';
+import type { RuntimeDecision, RuntimePolicyConfig, RuntimeSessionSnapshot, RuntimeSignal } from '../runtime/types.js';
 
 export type RuntimeJudgeAction = 'continue' | 'raise_effort' | 'switch_model' | 'restart_clean' | 'escalate_human';
 
@@ -6,6 +6,7 @@ export interface RuntimeJudgeInput {
   snapshot: RuntimeSessionSnapshot;
   signals: RuntimeSignal[];
   deterministicDecision: RuntimeDecision;
+  policy: RuntimePolicyConfig;
 }
 
 export interface RuntimeJudgeVerdict {
