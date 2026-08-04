@@ -53,10 +53,7 @@ function rewriteBody(
   decision: RuntimeDecision,
   effort: string,
 ): Record<string, unknown> {
-  const cleaned =
-    decision.action === 'restart_clean' || decision.action === 'switch_model'
-      ? sanitizeForCleanRestart(wire, body)
-      : { ...body };
+  const cleaned = decision.action === 'restart_clean' || decision.action === 'switch_model' ? sanitizeForCleanRestart(wire, body) : { ...body };
   if (wire === 'responses') {
     const existing =
       cleaned.reasoning && typeof cleaned.reasoning === 'object' && !Array.isArray(cleaned.reasoning)
@@ -85,10 +82,7 @@ function routeHeaders(
 }
 
 function relativeCost(usage: ProxyUsage, upstream: ProxyUpstreamRoute): number {
-  return (
-    (usage.inputTokens * upstream.inputCostPerMillion + usage.outputTokens * upstream.outputCostPerMillion) /
-    1_000_000
-  );
+  return (usage.inputTokens * upstream.inputCostPerMillion + usage.outputTokens * upstream.outputCostPerMillion) / 1_000_000;
 }
 
 export function createProxyController(config: ProxyConfig, dependencies: ProxyControllerDependencies) {
@@ -138,9 +132,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     });
     const routeMap = config.routes[input.wire];
     if (!routeMap) throw new Error(`No ${input.wire} routes are configured.`);
-    const ladder = TIERS.filter(
-      (tier) => TIERS.indexOf(tier) >= TIERS.indexOf(preflight.tier) && routeMap[tier] !== undefined,
-    );
+    const ladder = TIERS.filter((tier) => TIERS.indexOf(tier) >= TIERS.indexOf(preflight.tier) && routeMap[tier] !== undefined);
     if (!ladder.includes(preflight.tier)) ladder.unshift(preflight.tier);
     const runtime = new RuntimeSession(
       {
@@ -215,13 +207,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     };
   }
 
-  function recordUsage(
-    sessionId: string,
-    upstream: ProxyUpstreamRoute,
-    usage: ProxyUsage,
-    success: boolean,
-    errorClass?: string,
-  ): void {
+  function recordUsage(sessionId: string, upstream: ProxyUpstreamRoute, usage: ProxyUsage, success: boolean, errorClass?: string): void {
     const record = sessions.get(sessionId);
     if (!record) return;
     const result = record.runtime.observe({
