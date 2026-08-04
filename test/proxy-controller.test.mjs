@@ -7,9 +7,9 @@ const config = validateProxyConfig({
   listen: { host: '127.0.0.1', port: 8788 },
   routes: {
     responses: {
-      balanced: { baseUrl: 'https://upstream.invalid/v1', model: 'cheap' },
-      deep: { baseUrl: 'https://upstream.invalid/v1', model: 'strong' },
-      max: { baseUrl: 'https://upstream.invalid/v1', model: 'max' },
+      balanced: { baseUrl: 'https://upstream.invalid/v1', model: 'cheap', reasoningEffort: true },
+      deep: { baseUrl: 'https://upstream.invalid/v1', model: 'strong', reasoningEffort: true },
+      max: { baseUrl: 'https://upstream.invalid/v1', model: 'max', reasoningEffort: true },
     },
   },
   session: { maxSessions: 10, ttlMs: 10000 },
@@ -36,11 +36,12 @@ test('proxy controller rewrites the alias and adds routing headers', async () =>
   });
   assert.equal(result.upstream.model, 'cheap');
   assert.equal(result.body.model, 'cheap');
+  assert.equal(result.body.reasoning.effort, 'medium');
   assert.equal(result.headers['x-switchboard-tier'], 'balanced');
   assert.equal(result.headers['x-switchboard-session'], 's1');
 });
 
-test('repeated failed evidence escalates and rewrites to a stronger model', async () => {
+test('repeated failed evidence raises supported effort and then rewrites to a stronger model', async () => {
   const controller = createProxyController(config, { route });
   const history = [
     { role: 'user', content: 'Fix this code' },
@@ -58,6 +59,7 @@ test('repeated failed evidence escalates and rewrites to a stronger model', asyn
     body: { model: 'switchboard', prompt_cache_key: 's2', input: history },
   });
   assert.equal(result.decision.action, 'raise_effort');
+  assert.equal(result.body.reasoning.effort, 'high');
   assert.equal(result.headers['x-switchboard-effort'], 'high');
   const next = await controller.prepare({
     wire: 'responses',
@@ -77,7 +79,29 @@ test('repeated failed evidence escalates and rewrites to a stronger model', asyn
   assert.equal(next.upstream.model, 'strong');
 });
 
-test('config rejects a non-loopback bind without a token and requires routes', () => {
+test('missing exact floor route starts on the next configured tier without a phantom switch', async () => {
+  const sparse = validateProxyConfig({
+    routes: {
+      responses: {
+        deep: { baseUrl: 'https://upstream.invalid/v1', model: 'strong' },
+        max: { baseUrl: 'https://upstream.invalid/v1', model: 'max' },
+      },
+    },
+  });
+  const controller = createProxyController(sparse, { route });
+  const result = await controller.prepare({
+    wire: 'responses',
+    headers: {},
+    body: { model: 'switchboard', prompt_cache_key: 'sparse', input: [{ role: 'user', content: 'Fix this code' }] },
+  });
+  assert.equal(result.snapshot.initialTier, 'deep');
+  assert.equal(result.snapshot.currentTier, 'deep');
+  assert.equal(result.upstream.model, 'strong');
+  assert.equal(result.body.reasoning, undefined);
+  assert.equal(result.snapshot.currentEffort, 'high');
+});
+
+test('config rejects unsafe binds, missing routes, and Messages reasoning-effort claims', () => {
   assert.throws(
     () =>
       validateProxyConfig({
@@ -87,6 +111,13 @@ test('config rejects a non-loopback bind without a token and requires routes', (
     /token/i,
   );
   assert.throws(() => validateProxyConfig({ listen: { host: '127.0.0.1', port: 8788 }, routes: {} }), /route/i);
+  assert.throws(
+    () =>
+      validateProxyConfig({
+        routes: { messages: { balanced: { baseUrl: 'https://x/v1', model: 'x', reasoningEffort: true } } },
+      }),
+    /Responses wire/i,
+  );
 });
 
 test('judge escalation is reconciled into session state exactly once', async () => {
