@@ -35,6 +35,7 @@
   "exports": {
     ".": "./mcp/server.mjs",
     "./router": "./dist/js/router/route.js",
+    "./runtime": "./dist/js/runtime/index.js",
     "./package.json": "./package.json"
   },
   "files": [
