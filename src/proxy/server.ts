@@ -3,6 +3,7 @@ import { Readable } from 'node:stream';
 import { createProxyController, rewriteProxyBody } from './controller.js';
 import { ProxyHealthRegistry } from './health.js';
 import { createProxyJudge } from './judge.js';
+import { ProxyOutcomeLearner } from './outcomes.js';
 import { executeReliableFetch, RetryTokenBucket } from './reliability.js';
 import { ProxyCompatibilityError } from './requirements.js';
 import { ProxyTelemetry } from './telemetry.js';
@@ -14,6 +15,7 @@ export interface ProxyServerDependencies extends ProxyControllerDependencies {
   health?: ProxyHealthRegistry;
   retryBudget?: RetryTokenBucket;
   telemetry?: ProxyTelemetry;
+  outcomes?: ProxyOutcomeLearner;
 }
 
 export interface SwitchboardProxyServer {
@@ -22,6 +24,7 @@ export interface SwitchboardProxyServer {
   health: ProxyHealthRegistry;
   retryBudget: RetryTokenBucket;
   telemetry: ProxyTelemetry;
+  outcomes: ProxyOutcomeLearner;
   listen(): Promise<{ host: string; port: number }>;
   close(): Promise<void>;
 }
@@ -179,6 +182,7 @@ function statusPayload(
   health: ProxyHealthRegistry,
   retryBudget: RetryTokenBucket,
   telemetry: ProxyTelemetry,
+  outcomes: ProxyOutcomeLearner,
 ): Record<string, unknown> {
   return {
     service: 'switchboard-proxy',
@@ -193,6 +197,7 @@ function statusPayload(
     },
     retryBudget: { available: retryBudget.available, capacity: config.reliability.retryBudget.capacity },
     endpoints: health.snapshots(),
+    outcomes: { enabled: config.routing.outcomeLearning, ...outcomes.snapshot() },
     telemetry: { summary: telemetry.summary(), recent: telemetry.events() },
   };
 }
@@ -200,9 +205,11 @@ function statusPayload(
 export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: ProxyServerDependencies): SwitchboardProxyServer {
   const clock = dependencies.now ?? Date.now;
   const clockOption = dependencies.now === undefined ? {} : { now: dependencies.now };
+  const outcomes = dependencies.outcomes ?? new ProxyOutcomeLearner(clockOption);
   const controller = createProxyController(config, {
     ...dependencies,
     judge: dependencies.judge ?? createProxyJudge(config.judge),
+    ...(config.routing.outcomeLearning ? { outcomes } : {}),
   });
   const fetchImpl = dependencies.fetch ?? fetch;
   const health =
@@ -237,7 +244,7 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
       return;
     }
     if (request.method === 'GET' && url.pathname === '/v1/switchboard/status') {
-      json(response, 200, statusPayload(config, health, retryBudget, telemetry));
+      json(response, 200, statusPayload(config, health, retryBudget, telemetry, outcomes));
       return;
     }
     if (request.method === 'GET' && url.pathname === '/v1/switchboard/sessions') {
@@ -272,11 +279,15 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
         json(response, localStop.status, localStop.body, activePrepared.headers);
         return;
       }
+      const qualityScores = config.routing.outcomeLearning
+        ? outcomes.scores(activePrepared.upstreams, activePrepared.taskCategories)
+        : undefined;
       const reliable = await executeReliableFetch({
         upstreams: activePrepared.upstreams,
         health,
         selection: {
           seed: config.routing.sessionStickiness ? activePrepared.sessionId : `${activePrepared.sessionId}:${clock()}:${Math.random()}`,
+          ...(qualityScores === undefined ? {} : { qualityScores }),
         },
         reliability: config.reliability,
         retryBudget,
@@ -293,6 +304,9 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
       });
       const upstream = reliable.response;
       const selectedUpstream = reliable.upstream;
+      if (upstream.ok && config.routing.outcomeLearning) {
+        outcomes.recordSelection(activePrepared.sessionId, selectedUpstream.id, activePrepared.taskCategories);
+      }
       const routing = routeHeaders(activePrepared, selectedUpstream, reliable.attempts.length, reliable.fallback);
       copyResponseHeaders(upstream, response, routing);
       response.statusCode = upstream.status;
@@ -377,6 +391,7 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
     health,
     retryBudget,
     telemetry,
+    outcomes,
     listen: () =>
       new Promise((resolve, reject) => {
         server.once('error', reject);
