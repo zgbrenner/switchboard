@@ -89,9 +89,7 @@ test('retryable upstream failure falls back to a different healthy endpoint with
     request: (upstream) => {
       attempts.push(upstream.id);
       if (attempts.length === 1) return Promise.resolve(new Response('unavailable', { status: 503 }));
-      return Promise.resolve(
-        new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }),
-      );
+      return Promise.resolve(new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }));
     },
   });
   assert.equal(result.response.status, 200);
