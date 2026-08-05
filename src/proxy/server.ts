@@ -1,9 +1,37 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
-import { createProxyController } from './controller.js';
+import { createProxyController, rewriteProxyBody } from './controller.js';
+import { ProxyHealthRegistry } from './health.js';
 import { createProxyJudge } from './judge.js';
-import type { ProxyConfig, ProxyControllerDependencies, ProxyPreparedRequest, ProxyUsage, ProxyWire } from './types.js';
+import { executeReliableFetch, RetryTokenBucket } from './reliability.js';
+import { ProxyCompatibilityError } from './requirements.js';
+import { ProxyTelemetry } from './telemetry.js';
+import type { ProxyTelemetryInput } from './telemetry.js';
+import type {
+  ProxyConfig,
+  ProxyControllerDependencies,
+  ProxyPreparedRequest,
+  ProxyUpstreamRoute,
+  ProxyUsage,
+  ProxyWire,
+} from './types.js';
 import { usageFromJson, usageFromSse } from './usage.js';
+
+export interface ProxyServerDependencies extends ProxyControllerDependencies {
+  health?: ProxyHealthRegistry;
+  retryBudget?: RetryTokenBucket;
+  telemetry?: ProxyTelemetry;
+}
+
+export interface SwitchboardProxyServer {
+  server: Server;
+  controller: ReturnType<typeof createProxyController>;
+  health: ProxyHealthRegistry;
+  retryBudget: RetryTokenBucket;
+  telemetry: ProxyTelemetry;
+  listen(): Promise<{ host: string; port: number }>;
+  close(): Promise<void>;
+}
 
 function json(response: ServerResponse, status: number, value: unknown, headers: Record<string, string> = {}): void {
   const body = JSON.stringify(value);
@@ -45,18 +73,18 @@ function authorized(request: IncomingMessage, token: string | undefined): boolea
   return request.headers.authorization === `Bearer ${token}`;
 }
 
-function upstreamHeaders(request: IncomingMessage, prepared: ProxyPreparedRequest): Record<string, string> {
-  const headers: Record<string, string> = { 'content-type': 'application/json', ...prepared.upstream.headers };
+function upstreamHeaders(request: IncomingMessage, wire: ProxyWire, upstream: ProxyUpstreamRoute): Record<string, string> {
+  const headers: Record<string, string> = { 'content-type': 'application/json', ...upstream.headers };
   const accept = request.headers.accept;
   if (typeof accept === 'string') headers.accept = accept;
-  if (prepared.wire === 'messages') {
+  if (wire === 'messages') {
     const version = request.headers['anthropic-version'];
     const beta = request.headers['anthropic-beta'];
     if (typeof version === 'string') headers['anthropic-version'] = version;
     else headers['anthropic-version'] = '2023-06-01';
     if (typeof beta === 'string') headers['anthropic-beta'] = beta;
-    if (prepared.upstream.apiKey !== undefined) headers['x-api-key'] = prepared.upstream.apiKey;
-  } else if (prepared.upstream.apiKey !== undefined) headers.authorization = `Bearer ${prepared.upstream.apiKey}`;
+    if (upstream.apiKey !== undefined) headers['x-api-key'] = upstream.apiKey;
+  } else if (upstream.apiKey !== undefined) headers.authorization = `Bearer ${upstream.apiKey}`;
   return headers;
 }
 
@@ -94,20 +122,109 @@ function parseErrorClass(status: number): string {
   return `HTTP_${status}`;
 }
 
-export function createSwitchboardProxyServer(
+function routeHeaders(
+  prepared: ProxyPreparedRequest,
+  upstream: ProxyUpstreamRoute,
+  attempts: number,
+  fallback: boolean,
+): Record<string, string> {
+  return {
+    ...prepared.headers,
+    'x-switchboard-model': upstream.model,
+    'x-switchboard-upstream': upstream.id,
+    'x-switchboard-attempts': String(attempts),
+    'x-switchboard-fallback': String(fallback),
+  };
+}
+
+function relativeCost(usage: ProxyUsage, upstream: ProxyUpstreamRoute): number {
+  return (usage.inputTokens * upstream.inputCostPerMillion + usage.outputTokens * upstream.outputCostPerMillion) / 1_000_000;
+}
+
+function providerName(upstream: ProxyUpstreamRoute): string {
+  return new URL(upstream.baseUrl).hostname;
+}
+
+function totalLatency(attempts: Array<{ latencyMs: number }>): number {
+  return attempts.reduce((total, attempt) => total + attempt.latencyMs, 0);
+}
+
+function recordTelemetry(
+  telemetry: ProxyTelemetry,
+  prepared: ProxyPreparedRequest,
+  upstream: ProxyUpstreamRoute,
+  status: number,
+  attempts: Array<{ latencyMs: number }>,
+  fallback: boolean,
+  usage: ProxyUsage,
+  errorClass?: string,
+): void {
+  const input: ProxyTelemetryInput = {
+    wire: prepared.wire,
+    sessionId: prepared.sessionId,
+    endpointId: upstream.id,
+    provider: providerName(upstream),
+    requestModel: 'switchboard',
+    responseModel: upstream.model,
+    tier: prepared.snapshot.currentTier,
+    decision: prepared.decision.action,
+    judgeSource: prepared.judgeSource,
+    status,
+    latencyMs: totalLatency(attempts),
+    attempts: attempts.length,
+    fallback,
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cost: relativeCost(usage, upstream),
+    ...(errorClass === undefined ? {} : { errorClass }),
+  };
+  telemetry.record(input);
+}
+
+function statusPayload(
   config: ProxyConfig,
-  dependencies: ProxyControllerDependencies,
-): {
-  server: Server;
-  controller: ReturnType<typeof createProxyController>;
-  listen(): Promise<{ host: string; port: number }>;
-  close(): Promise<void>;
-} {
+  health: ProxyHealthRegistry,
+  retryBudget: RetryTokenBucket,
+  telemetry: ProxyTelemetry,
+): Record<string, unknown> {
+  return {
+    service: 'switchboard-proxy',
+    routing: { ...config.routing },
+    reliability: {
+      maxAttempts: config.reliability.maxAttempts,
+      requestTimeoutMs: config.reliability.requestTimeoutMs,
+      initialBackoffMs: config.reliability.initialBackoffMs,
+      maxBackoffMs: config.reliability.maxBackoffMs,
+      maxRetryAfterMs: config.reliability.maxRetryAfterMs,
+      circuitBreaker: { ...config.reliability.circuitBreaker },
+    },
+    retryBudget: { available: retryBudget.available, capacity: config.reliability.retryBudget.capacity },
+    endpoints: health.snapshots(),
+    telemetry: { summary: telemetry.summary(), recent: telemetry.events() },
+  };
+}
+
+export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: ProxyServerDependencies): SwitchboardProxyServer {
   const controller = createProxyController(config, {
     ...dependencies,
     judge: dependencies.judge ?? createProxyJudge(config.judge),
   });
   const fetchImpl = dependencies.fetch ?? fetch;
+  const health =
+    dependencies.health ??
+    new ProxyHealthRegistry({
+      profile: config.routing.profile,
+      circuitBreaker: config.reliability.circuitBreaker,
+      now: dependencies.now,
+    });
+  const retryBudget =
+    dependencies.retryBudget ??
+    new RetryTokenBucket({
+      capacity: config.reliability.retryBudget.capacity,
+      refillPerSecond: config.reliability.retryBudget.refillPerSecond,
+      now: dependencies.now,
+    });
+  const telemetry = dependencies.telemetry ?? new ProxyTelemetry({ now: dependencies.now });
   const server = createServer(async (request, response) => {
     const host = request.headers.host ?? `${config.listen.host}:${config.listen.port}`;
     const url = new URL(request.url ?? '/', `http://${host}`);
@@ -122,6 +239,10 @@ export function createSwitchboardProxyServer(
     }
     if (request.method === 'GET' && url.pathname === '/health') {
       json(response, 200, { status: 'ok', service: 'switchboard-proxy' });
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/v1/switchboard/status') {
+      json(response, 200, statusPayload(config, health, retryBudget, telemetry));
       return;
     }
     if (request.method === 'GET' && url.pathname === '/v1/switchboard/sessions') {
@@ -155,31 +276,65 @@ export function createSwitchboardProxyServer(
         json(response, localStop.status, localStop.body, prepared.headers);
         return;
       }
-      const upstream = await fetchImpl(prepared.endpoint, {
-        method: 'POST',
-        headers: upstreamHeaders(request, prepared),
-        body: JSON.stringify(prepared.body),
+      const reliable = await executeReliableFetch({
+        upstreams: prepared.upstreams,
+        health,
+        selection: {
+          seed: config.routing.sessionStickiness ? prepared.sessionId : `${prepared.sessionId}:${Date.now()}:${Math.random()}`,
+        },
+        reliability: config.reliability,
+        retryBudget,
+        now: dependencies.now,
+        request: (upstream, signal) => {
+          const renderedBody = rewriteProxyBody(wire, prepared?.baseBody ?? body, upstream, prepared?.snapshot.currentEffort ?? 'medium');
+          return fetchImpl(`${upstream.baseUrl}/${wire}`, {
+            method: 'POST',
+            headers: upstreamHeaders(request, wire, upstream),
+            body: JSON.stringify(renderedBody),
+            signal,
+          });
+        },
       });
-      copyResponseHeaders(upstream, response, prepared.headers);
+      const upstream = reliable.response;
+      const selectedUpstream = reliable.upstream;
+      const routing = routeHeaders(prepared, selectedUpstream, reliable.attempts.length, reliable.fallback);
+      copyResponseHeaders(upstream, response, routing);
       response.statusCode = upstream.status;
-      const isStreaming = prepared.body.stream === true && upstream.body !== null;
+      const isStreaming = prepared.baseBody.stream === true && upstream.body !== null;
       if (isStreaming && upstream.body !== null) {
         const [clientBody, meterBody] = upstream.body.tee();
         Readable.fromWeb(clientBody).pipe(response);
         const sessionId = prepared.sessionId;
-        const selectedUpstream = prepared.upstream;
         void new Response(meterBody)
           .text()
           .then((text) => {
-            controller.recordUsage(
-              sessionId,
+            const usage = usageFromSse(wire, text);
+            const classification = upstream.ok ? undefined : parseErrorClass(upstream.status);
+            controller.recordUsage(sessionId, selectedUpstream, usage, upstream.ok, classification);
+            recordTelemetry(
+              telemetry,
+              prepared as ProxyPreparedRequest,
               selectedUpstream,
-              usageFromSse(wire, text),
-              upstream.ok,
-              upstream.ok ? undefined : parseErrorClass(upstream.status),
+              upstream.status,
+              reliable.attempts,
+              reliable.fallback,
+              usage,
+              classification,
             );
           })
-          .catch(() => undefined);
+          .catch(() => {
+            controller.recordUsage(sessionId, selectedUpstream, { inputTokens: 0, outputTokens: 0 }, false, 'StreamReadError');
+            recordTelemetry(
+              telemetry,
+              prepared as ProxyPreparedRequest,
+              selectedUpstream,
+              upstream.status,
+              reliable.attempts,
+              reliable.fallback,
+              { inputTokens: 0, outputTokens: 0 },
+              'StreamReadError',
+            );
+          });
         return;
       }
       const bytes = Buffer.from(await upstream.arrayBuffer());
@@ -191,22 +346,35 @@ export function createSwitchboardProxyServer(
       } catch {
         // Non-JSON upstream bodies still pass through unchanged.
       }
-      controller.recordUsage(
-        prepared.sessionId,
-        prepared.upstream,
+      const classification = upstream.ok ? undefined : parseErrorClass(upstream.status);
+      controller.recordUsage(prepared.sessionId, selectedUpstream, usage, upstream.ok, classification);
+      recordTelemetry(
+        telemetry,
+        prepared,
+        selectedUpstream,
+        upstream.status,
+        reliable.attempts,
+        reliable.fallback,
         usage,
-        upstream.ok,
-        upstream.ok ? undefined : parseErrorClass(upstream.status),
+        classification,
       );
     } catch (error) {
       if (prepared) {
         controller.recordUsage(prepared.sessionId, prepared.upstream, { inputTokens: 0, outputTokens: 0 }, false, 'ProxyError');
       }
-      const status = error instanceof RangeError ? 413 : error instanceof SyntaxError || error instanceof TypeError ? 400 : 502;
+      const compatibility = error instanceof ProxyCompatibilityError;
+      const status = compatibility
+        ? 422
+        : error instanceof RangeError
+          ? 413
+          : error instanceof SyntaxError || error instanceof TypeError
+            ? 400
+            : 502;
+      const type = compatibility ? error.code : 'switchboard_proxy_error';
       json(
         response,
         status,
-        { error: { type: 'switchboard_proxy_error', message: error instanceof Error ? error.message : String(error) } },
+        { error: { type, message: error instanceof Error ? error.message : String(error) } },
         prepared?.headers,
       );
     }
@@ -215,6 +383,9 @@ export function createSwitchboardProxyServer(
   return {
     server,
     controller,
+    health,
+    retryBudget,
+    telemetry,
     listen: () =>
       new Promise((resolve, reject) => {
         server.once('error', reject);
