@@ -163,9 +163,7 @@ export async function executeReliableFetch(options: ProxyReliableFetchOptions): 
       const latencyMs = Math.max(0, now() - startedAt);
       const retryable = isRetryableStatus(response.status);
       const rateLimited = response.status === 429;
-      const retryAfterMs = rateLimited
-        ? retryAfterMilliseconds(response.headers, now(), options.reliability.maxRetryAfterMs)
-        : undefined;
+      const retryAfterMs = rateLimited ? retryAfterMilliseconds(response.headers, now(), options.reliability.maxRetryAfterMs) : undefined;
       options.health.completeAttempt(upstream.id, {
         ok: !retryable,
         retryable,
