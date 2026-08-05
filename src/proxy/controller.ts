@@ -90,11 +90,7 @@ function initialEffort(wire: ProxyWire, tier: QualityTier, preflightEffort: Effo
   return EFFORT_CEILING[tier];
 }
 
-export function prepareProxyBaseBody(
-  wire: ProxyWire,
-  body: Record<string, unknown>,
-  decision: RuntimeDecision,
-): Record<string, unknown> {
+export function prepareProxyBaseBody(wire: ProxyWire, body: Record<string, unknown>, decision: RuntimeDecision): Record<string, unknown> {
   if (decision.action === 'restart_clean' || decision.action === 'switch_model') return sanitizeForCleanRestart(wire, body);
   return { ...body };
 }
