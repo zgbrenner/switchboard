@@ -4,7 +4,7 @@ import { createProxyController, rewriteProxyBody } from './controller.js';
 import { ProxyHealthRegistry } from './health.js';
 import { createProxyJudge } from './judge.js';
 import { ProxyOutcomeLearner } from './outcomes.js';
-import { executeReliableFetch, RetryTokenBucket } from './reliability.js';
+import { executeReliableFetch, ProxyReliableFetchError, RetryTokenBucket } from './reliability.js';
 import { ProxyCompatibilityError } from './requirements.js';
 import { ProxyTelemetry } from './telemetry.js';
 import type { ProxyTelemetryInput } from './telemetry.js';
@@ -369,8 +369,25 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
         classification,
       );
     } catch (error) {
-      if (prepared) {
-        controller.recordUsage(prepared.sessionId, prepared.upstream, { inputTokens: 0, outputTokens: 0 }, false, 'ProxyError');
+      const exhausted = error instanceof ProxyReliableFetchError ? error : undefined;
+      const failedUpstream = exhausted?.upstream ?? prepared?.upstream;
+      const failureClass = exhausted?.attempts.at(-1)?.errorClass ?? 'ProxyError';
+      const fallback =
+        exhausted !== undefined && exhausted.attempts.some((attempt) => attempt.upstreamId !== exhausted.upstream.id);
+      if (prepared && failedUpstream) {
+        controller.recordUsage(prepared.sessionId, failedUpstream, { inputTokens: 0, outputTokens: 0 }, false, failureClass);
+        if (exhausted !== undefined) {
+          recordTelemetry(
+            telemetry,
+            prepared,
+            failedUpstream,
+            502,
+            exhausted.attempts,
+            fallback,
+            { inputTokens: 0, outputTokens: 0 },
+            failureClass,
+          );
+        }
       }
       const compatibility = error instanceof ProxyCompatibilityError;
       const status = compatibility
@@ -381,7 +398,8 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
             ? 400
             : 502;
       const type = compatibility ? error.code : 'switchboard_proxy_error';
-      json(response, status, { error: { type, message: error instanceof Error ? error.message : String(error) } }, prepared?.headers);
+      const headers = prepared && failedUpstream ? routeHeaders(prepared, failedUpstream, exhausted?.attempts.length ?? 0, fallback) : prepared?.headers;
+      json(response, status, { error: { type, message: error instanceof Error ? error.message : String(error) } }, headers);
     }
   });
 
