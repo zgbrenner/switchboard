@@ -7,14 +7,7 @@ import { executeReliableFetch, RetryTokenBucket } from './reliability.js';
 import { ProxyCompatibilityError } from './requirements.js';
 import { ProxyTelemetry } from './telemetry.js';
 import type { ProxyTelemetryInput } from './telemetry.js';
-import type {
-  ProxyConfig,
-  ProxyControllerDependencies,
-  ProxyPreparedRequest,
-  ProxyUpstreamRoute,
-  ProxyUsage,
-  ProxyWire,
-} from './types.js';
+import type { ProxyConfig, ProxyControllerDependencies, ProxyPreparedRequest, ProxyUpstreamRoute, ProxyUsage, ProxyWire } from './types.js';
 import { usageFromJson, usageFromSse } from './usage.js';
 
 export interface ProxyServerDependencies extends ProxyControllerDependencies {
@@ -374,12 +367,7 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
             ? 400
             : 502;
       const type = compatibility ? error.code : 'switchboard_proxy_error';
-      json(
-        response,
-        status,
-        { error: { type, message: error instanceof Error ? error.message : String(error) } },
-        prepared?.headers,
-      );
+      json(response, status, { error: { type, message: error instanceof Error ? error.message : String(error) } }, prepared?.headers);
     }
   });
 
