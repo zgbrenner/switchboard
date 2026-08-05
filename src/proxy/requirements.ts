@@ -113,10 +113,12 @@ function compatible(upstream: ProxyUpstreamRoute, requirements: ProxyRequestRequ
   if (!booleanCompatible(requirements.json, capabilities.json, strict)) return false;
   if (!booleanCompatible(requirements.reasoning, reasoning, strict)) return false;
   if (capabilities.maxContextTokens !== undefined && requirements.estimatedInputTokens > capabilities.maxContextTokens) return false;
-  if (strict && requirements.estimatedInputTokens > 0 && capabilities.maxContextTokens === undefined) return false;
-  if (requirements.maxOutputTokens > 0) {
-    if (capabilities.maxOutputTokens !== undefined && requirements.maxOutputTokens > capabilities.maxOutputTokens) return false;
-    if (strict && capabilities.maxOutputTokens === undefined) return false;
+  if (
+    requirements.maxOutputTokens > 0 &&
+    capabilities.maxOutputTokens !== undefined &&
+    requirements.maxOutputTokens > capabilities.maxOutputTokens
+  ) {
+    return false;
   }
   if (requirements.zeroDataRetention && capabilities.dataRetention !== 'zero') return false;
   return true;
