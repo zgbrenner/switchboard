@@ -105,13 +105,9 @@ function normalizeCapabilities(value: ProxyUpstreamRouteInput['capabilities'], l
   const json = optionalBoolean(value.json, `${label}.json`);
   const reasoning = optionalBoolean(value.reasoning, `${label}.reasoning`);
   const maxContextTokens =
-    value.maxContextTokens === undefined
-      ? undefined
-      : boundedInteger(value.maxContextTokens, `${label}.maxContextTokens`, 1, 10_000_000);
+    value.maxContextTokens === undefined ? undefined : boundedInteger(value.maxContextTokens, `${label}.maxContextTokens`, 1, 10_000_000);
   const maxOutputTokens =
-    value.maxOutputTokens === undefined
-      ? undefined
-      : boundedInteger(value.maxOutputTokens, `${label}.maxOutputTokens`, 1, 10_000_000);
+    value.maxOutputTokens === undefined ? undefined : boundedInteger(value.maxOutputTokens, `${label}.maxOutputTokens`, 1, 10_000_000);
   const dataRetention = value.dataRetention;
   if (dataRetention !== undefined && !['zero', 'provider', 'unknown'].includes(dataRetention)) {
     throw new TypeError(`${label}.dataRetention must be zero, provider, or unknown.`);
@@ -183,26 +179,11 @@ function normalizeProfile(value: ProxyRoutingProfile | undefined): ProxyRoutingP
 function normalizeReliability(input: ProxyConfigInput['reliability'], profile: ProxyRoutingProfile): ProxyReliabilityConfig {
   const defaults = PROFILE_DEFAULTS[profile];
   const maxAttempts = boundedInteger(input?.maxAttempts ?? defaults.maxAttempts, 'reliability.maxAttempts', 1, 5);
-  const requestTimeoutMs = boundedInteger(
-    input?.requestTimeoutMs ?? defaults.requestTimeoutMs,
-    'reliability.requestTimeoutMs',
-    1,
-    600_000,
-  );
-  const initialBackoffMs = boundedInteger(
-    input?.initialBackoffMs ?? defaults.initialBackoffMs,
-    'reliability.initialBackoffMs',
-    0,
-    60_000,
-  );
+  const requestTimeoutMs = boundedInteger(input?.requestTimeoutMs ?? defaults.requestTimeoutMs, 'reliability.requestTimeoutMs', 1, 600_000);
+  const initialBackoffMs = boundedInteger(input?.initialBackoffMs ?? defaults.initialBackoffMs, 'reliability.initialBackoffMs', 0, 60_000);
   const maxBackoffMs = boundedInteger(input?.maxBackoffMs ?? defaults.maxBackoffMs, 'reliability.maxBackoffMs', 0, 120_000);
   if (maxBackoffMs < initialBackoffMs) throw new TypeError('reliability.maxBackoffMs must be at least initialBackoffMs.');
-  const maxRetryAfterMs = boundedInteger(
-    input?.maxRetryAfterMs ?? defaults.maxRetryAfterMs,
-    'reliability.maxRetryAfterMs',
-    0,
-    300_000,
-  );
+  const maxRetryAfterMs = boundedInteger(input?.maxRetryAfterMs ?? defaults.maxRetryAfterMs, 'reliability.maxRetryAfterMs', 0, 300_000);
   const retryBudget = {
     capacity: boundedInteger(input?.retryBudget?.capacity ?? defaults.retryBudget.capacity, 'reliability.retryBudget.capacity', 1, 10_000),
     refillPerSecond: boundedNumber(
@@ -281,8 +262,7 @@ export function validateProxyConfig(input: ProxyConfigInput, env: NodeJS.Process
 
   const profile = normalizeProfile(input.routing?.profile);
   const strictCapabilities = optionalBoolean(input.routing?.strictCapabilities, 'routing.strictCapabilities') ?? false;
-  const requireZeroDataRetention =
-    optionalBoolean(input.routing?.requireZeroDataRetention, 'routing.requireZeroDataRetention') ?? false;
+  const requireZeroDataRetention = optionalBoolean(input.routing?.requireZeroDataRetention, 'routing.requireZeroDataRetention') ?? false;
   const sessionStickiness = optionalBoolean(input.routing?.sessionStickiness, 'routing.sessionStickiness') ?? true;
   const maxSessions = boundedInteger(input.session?.maxSessions ?? 256, 'session.maxSessions', 1, 10_000);
   const ttlMs = boundedInteger(input.session?.ttlMs ?? 30 * 60 * 1000, 'session.ttlMs', 1, Number.MAX_SAFE_INTEGER);
