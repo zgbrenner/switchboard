@@ -13,6 +13,15 @@ export interface ProxyCompatibilityOptions {
   strictCapabilities?: boolean;
 }
 
+export class ProxyCompatibilityError extends Error {
+  readonly code = 'switchboard_no_compatible_upstream';
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'ProxyCompatibilityError';
+  }
+}
+
 function asRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : undefined;
 }
