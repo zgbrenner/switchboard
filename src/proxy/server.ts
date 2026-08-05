@@ -164,7 +164,7 @@ function recordTelemetry(
     sessionId: prepared.sessionId,
     endpointId: upstream.id,
     provider: providerName(upstream),
-    requestModel: 'switchboard',
+    requestModel: typeof prepared.baseBody.model === 'string' ? prepared.baseBody.model : 'switchboard',
     responseModel: upstream.model,
     tier: prepared.snapshot.currentTier,
     decision: prepared.decision.action,
@@ -205,6 +205,8 @@ function statusPayload(
 }
 
 export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: ProxyServerDependencies): SwitchboardProxyServer {
+  const clock = dependencies.now ?? Date.now;
+  const clockOption = dependencies.now === undefined ? {} : { now: dependencies.now };
   const controller = createProxyController(config, {
     ...dependencies,
     judge: dependencies.judge ?? createProxyJudge(config.judge),
@@ -215,16 +217,16 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
     new ProxyHealthRegistry({
       profile: config.routing.profile,
       circuitBreaker: config.reliability.circuitBreaker,
-      now: dependencies.now,
+      ...clockOption,
     });
   const retryBudget =
     dependencies.retryBudget ??
     new RetryTokenBucket({
       capacity: config.reliability.retryBudget.capacity,
       refillPerSecond: config.reliability.retryBudget.refillPerSecond,
-      now: dependencies.now,
+      ...clockOption,
     });
-  const telemetry = dependencies.telemetry ?? new ProxyTelemetry({ now: dependencies.now });
+  const telemetry = dependencies.telemetry ?? new ProxyTelemetry(clockOption);
   const server = createServer(async (request, response) => {
     const host = request.headers.host ?? `${config.listen.host}:${config.listen.port}`;
     const url = new URL(request.url ?? '/', `http://${host}`);
@@ -271,22 +273,23 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
         headers: requestHeaders(request),
         clientFingerprint: `${request.socket.remoteAddress ?? ''}:${request.headers['user-agent'] ?? ''}`,
       });
-      const localStop = stopResponse(prepared, config);
+      const activePrepared = prepared;
+      const localStop = stopResponse(activePrepared, config);
       if (localStop) {
-        json(response, localStop.status, localStop.body, prepared.headers);
+        json(response, localStop.status, localStop.body, activePrepared.headers);
         return;
       }
       const reliable = await executeReliableFetch({
-        upstreams: prepared.upstreams,
+        upstreams: activePrepared.upstreams,
         health,
         selection: {
-          seed: config.routing.sessionStickiness ? prepared.sessionId : `${prepared.sessionId}:${Date.now()}:${Math.random()}`,
+          seed: config.routing.sessionStickiness ? activePrepared.sessionId : `${activePrepared.sessionId}:${clock()}:${Math.random()}`,
         },
         reliability: config.reliability,
         retryBudget,
-        now: dependencies.now,
+        ...clockOption,
         request: (upstream, signal) => {
-          const renderedBody = rewriteProxyBody(wire, prepared?.baseBody ?? body, upstream, prepared?.snapshot.currentEffort ?? 'medium');
+          const renderedBody = rewriteProxyBody(wire, activePrepared.baseBody, upstream, activePrepared.snapshot.currentEffort);
           return fetchImpl(`${upstream.baseUrl}/${wire}`, {
             method: 'POST',
             headers: upstreamHeaders(request, wire, upstream),
@@ -297,14 +300,14 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
       });
       const upstream = reliable.response;
       const selectedUpstream = reliable.upstream;
-      const routing = routeHeaders(prepared, selectedUpstream, reliable.attempts.length, reliable.fallback);
+      const routing = routeHeaders(activePrepared, selectedUpstream, reliable.attempts.length, reliable.fallback);
       copyResponseHeaders(upstream, response, routing);
       response.statusCode = upstream.status;
-      const isStreaming = prepared.baseBody.stream === true && upstream.body !== null;
+      const isStreaming = activePrepared.baseBody.stream === true && upstream.body !== null;
       if (isStreaming && upstream.body !== null) {
         const [clientBody, meterBody] = upstream.body.tee();
         Readable.fromWeb(clientBody).pipe(response);
-        const sessionId = prepared.sessionId;
+        const sessionId = activePrepared.sessionId;
         void new Response(meterBody)
           .text()
           .then((text) => {
@@ -313,7 +316,7 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
             controller.recordUsage(sessionId, selectedUpstream, usage, upstream.ok, classification);
             recordTelemetry(
               telemetry,
-              prepared as ProxyPreparedRequest,
+              activePrepared,
               selectedUpstream,
               upstream.status,
               reliable.attempts,
@@ -326,7 +329,7 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
             controller.recordUsage(sessionId, selectedUpstream, { inputTokens: 0, outputTokens: 0 }, false, 'StreamReadError');
             recordTelemetry(
               telemetry,
-              prepared as ProxyPreparedRequest,
+              activePrepared,
               selectedUpstream,
               upstream.status,
               reliable.attempts,
@@ -347,10 +350,10 @@ export function createSwitchboardProxyServer(config: ProxyConfig, dependencies: 
         // Non-JSON upstream bodies still pass through unchanged.
       }
       const classification = upstream.ok ? undefined : parseErrorClass(upstream.status);
-      controller.recordUsage(prepared.sessionId, selectedUpstream, usage, upstream.ok, classification);
+      controller.recordUsage(activePrepared.sessionId, selectedUpstream, usage, upstream.ok, classification);
       recordTelemetry(
         telemetry,
-        prepared,
+        activePrepared,
         selectedUpstream,
         upstream.status,
         reliable.attempts,
