@@ -15,6 +15,7 @@ export interface ProxyAttemptOutcome {
 export interface ProxySelectionContext {
   seed: string;
   excludedIds?: ReadonlySet<string> | readonly string[];
+  qualityScores?: Readonly<Record<string, number>>;
 }
 
 export interface ProxyEndpointSnapshot {
@@ -62,12 +63,12 @@ interface EndpointState {
 
 const PROFILE_WEIGHTS: Record<
   ProxyRoutingProfile,
-  { health: number; latency: number; cost: number; load: number; configuredWeight: number }
+  { health: number; latency: number; cost: number; load: number; configuredWeight: number; quality: number }
 > = {
-  balanced: { health: 0.35, latency: 0.25, cost: 0.2, load: 0.1, configuredWeight: 0.1 },
-  reliability: { health: 0.55, latency: 0.15, cost: 0.1, load: 0.1, configuredWeight: 0.1 },
-  latency: { health: 0.2, latency: 0.55, cost: 0.05, load: 0.1, configuredWeight: 0.1 },
-  cost: { health: 0.2, latency: 0.1, cost: 0.55, load: 0.05, configuredWeight: 0.1 },
+  balanced: { health: 0.25, latency: 0.2, cost: 0.15, load: 0.1, configuredWeight: 0.1, quality: 0.2 },
+  reliability: { health: 0.4, latency: 0.1, cost: 0.05, load: 0.1, configuredWeight: 0.1, quality: 0.25 },
+  latency: { health: 0.15, latency: 0.5, cost: 0.05, load: 0.1, configuredWeight: 0.1, quality: 0.1 },
+  cost: { health: 0.15, latency: 0.1, cost: 0.5, load: 0.05, configuredWeight: 0.05, quality: 0.15 },
 };
 
 function excludedSet(value: ProxySelectionContext['excludedIds']): ReadonlySet<string> {
@@ -82,6 +83,10 @@ function deterministicJitter(seed: string, id: string): number {
 
 function ewma(previous: number, sample: number, alpha: number, initialized: boolean): number {
   return initialized ? alpha * sample + (1 - alpha) * previous : sample;
+}
+
+function normalizedQuality(value: number | undefined): number {
+  return value === undefined || !Number.isFinite(value) ? 0.5 : Math.max(0, Math.min(1, value));
 }
 
 export class ProxyHealthRegistry {
@@ -154,7 +159,7 @@ export class ProxyHealthRegistry {
     const maxWeight = Math.max(...candidates.map((upstream) => upstream.weight));
     let selected: { upstream: ProxyUpstreamRoute; score: number } | undefined;
     for (const upstream of candidates) {
-      const score = this.score(upstream, maxWeight) + deterministicJitter(context.seed, upstream.id);
+      const score = this.score(upstream, maxWeight, context.qualityScores) + deterministicJitter(context.seed, upstream.id);
       if (selected === undefined || score > selected.score) selected = { upstream, score };
     }
     if (selected === undefined) return undefined;
@@ -201,7 +206,11 @@ export class ProxyHealthRegistry {
     return now >= state.openUntil && state.halfOpenInflight < this.circuitBreaker.halfOpenMaxRequests;
   }
 
-  private score(upstream: ProxyUpstreamRoute, maxWeight: number): number {
+  private score(
+    upstream: ProxyUpstreamRoute,
+    maxWeight: number,
+    qualityScores: ProxySelectionContext['qualityScores'],
+  ): number {
     const state = this.state(upstream.id);
     const weights = PROFILE_WEIGHTS[this.profile];
     const health = 1 - Math.min(1, state.errorEwma);
@@ -209,13 +218,15 @@ export class ProxyHealthRegistry {
     const cost = 1 / (1 + upstream.inputCostPerMillion + upstream.outputCostPerMillion);
     const load = 1 / (1 + state.inflight);
     const configuredWeight = upstream.weight / maxWeight;
+    const quality = normalizedQuality(qualityScores?.[upstream.id]);
     const circuitMultiplier = state.circuitState === 'closed' ? 1 : 0.5;
     return (
       (health * weights.health +
         latency * weights.latency +
         cost * weights.cost +
         load * weights.load +
-        configuredWeight * weights.configuredWeight) *
+        configuredWeight * weights.configuredWeight +
+        quality * weights.quality) *
       circuitMultiplier
     );
   }
