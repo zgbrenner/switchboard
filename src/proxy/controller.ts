@@ -1,8 +1,9 @@
 import { coordinateRuntimeDecision } from '../judge/coordinator.js';
 import { DeterministicRuntimeJudge } from '../judge/deterministic.js';
 import { RuntimeSession } from '../runtime/session.js';
-import type { RuntimeDecision, RuntimeObservationResult } from '../runtime/types.js';
+import type { RuntimeDecision, RuntimeObservationInput, RuntimeObservationResult } from '../runtime/types.js';
 import type { EffortLevel, QualityTier } from '../shared/types.js';
+import type { ProxyOutcomeLearner } from './outcomes.js';
 import { extractProxyRequirements, filterCompatibleUpstreams, ProxyCompatibilityError } from './requirements.js';
 import { normalizeProxySessionId } from './session-id.js';
 import { extractProxyRequest, sanitizeForCleanRestart, stableProxySessionId } from './wire.js';
@@ -25,11 +26,16 @@ const EFFORTS: EffortLevel[] = ['low', 'medium', 'high', 'max'];
 const DEFAULT_EFFORT: Record<QualityTier, EffortLevel> = { fast: 'low', balanced: 'medium', deep: 'high', max: 'max' };
 const EFFORT_CEILING: Record<QualityTier, EffortLevel> = { fast: 'medium', balanced: 'high', deep: 'high', max: 'max' };
 
+export interface ProxyControllerRuntimeDependencies extends ProxyControllerDependencies {
+  outcomes?: ProxyOutcomeLearner;
+}
+
 interface ProxySessionRecord {
   runtime: RuntimeSession;
   seen: Set<string>;
   lastDecision: RuntimeDecision;
   lastAccessedAt: number;
+  taskCategories: string[];
 }
 
 function continueDecision(): RuntimeDecision {
@@ -133,7 +139,7 @@ function relativeCost(usage: ProxyUsage, upstream: ProxyUpstreamRoute): number {
   return (usage.inputTokens * upstream.inputCostPerMillion + usage.outputTokens * upstream.outputCostPerMillion) / 1_000_000;
 }
 
-export function createProxyController(config: ProxyConfig, dependencies: ProxyControllerDependencies) {
+export function createProxyController(config: ProxyConfig, dependencies: ProxyControllerRuntimeDependencies) {
   const judge = dependencies.judge ?? new DeterministicRuntimeJudge();
   const now = dependencies.now ?? Date.now;
   const sessions = new Map<string, ProxySessionRecord>();
@@ -200,6 +206,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
       seen: new Set<string>(),
       lastDecision: continueDecision(),
       lastAccessedAt: now(),
+      taskCategories: [...preflight.taskCategories].slice(0, 16),
     };
     sessions.set(sessionId, record);
     return record;
@@ -224,12 +231,15 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     const record = await getOrCreate(input, sessionId, extracted.prompt, extracted.context, requirements);
     let latest: RuntimeObservationResult | undefined;
     let judgeSource: ProxyPreparedRequest['judgeSource'] = 'deterministic';
+    const newObservations: RuntimeObservationInput[] = [];
     for (const observation of extracted.observations) {
       if (record.seen.has(observation.key)) continue;
       record.seen.add(observation.key);
+      newObservations.push(observation.input);
       latest = record.runtime.observe(observation.input);
       record.lastDecision = latest.decision;
     }
+    if (newObservations.length > 0) dependencies.outcomes?.observe(sessionId, newObservations);
     if (latest && latest.signals.length > 0 && latest.decision.action === 'continue') {
       const coordinated = await coordinateRuntimeDecision(judge, {
         snapshot: latest.snapshot,
@@ -265,6 +275,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
       judgeSource,
       snapshot,
       requirements,
+      taskCategories: [...record.taskCategories],
     };
   }
 
