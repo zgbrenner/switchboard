@@ -41,9 +41,10 @@ function setup(overrides = {}) {
     config,
     health,
     now: () => now,
-    sleep: async (milliseconds) => {
+    sleep: (milliseconds) => {
       sleeps.push(milliseconds);
       now += milliseconds;
+      return Promise.resolve();
     },
     random: () => 0.5,
     sleeps,
@@ -85,10 +86,12 @@ test('retryable upstream failure falls back to a different healthy endpoint with
     now: harness.now,
     sleep: harness.sleep,
     random: harness.random,
-    request: async (upstream) => {
+    request: (upstream) => {
       attempts.push(upstream.id);
-      if (attempts.length === 1) return new Response('unavailable', { status: 503 });
-      return new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } });
+      if (attempts.length === 1) return Promise.resolve(new Response('unavailable', { status: 503 }));
+      return Promise.resolve(
+        new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'content-type': 'application/json' } }),
+      );
     },
   });
   assert.equal(result.response.status, 200);
@@ -108,9 +111,9 @@ test('terminal client errors return immediately without consuming retry budget',
     now: harness.now,
     sleep: harness.sleep,
     random: harness.random,
-    request: async () => {
+    request: () => {
       calls++;
-      return new Response('bad request', { status: 400 });
+      return Promise.resolve(new Response('bad request', { status: 400 }));
     },
   });
   assert.equal(result.response.status, 400);
@@ -129,10 +132,10 @@ test('rate limits honor Retry-After before fallback', async () => {
     now: harness.now,
     sleep: harness.sleep,
     random: harness.random,
-    request: async () => {
+    request: () => {
       calls++;
-      if (calls === 1) return new Response('limited', { status: 429, headers: { 'retry-after': '1' } });
-      return new Response('ok', { status: 200 });
+      if (calls === 1) return Promise.resolve(new Response('limited', { status: 429, headers: { 'retry-after': '1' } }));
+      return Promise.resolve(new Response('ok', { status: 200 }));
     },
   });
   assert.equal(result.response.status, 200);
@@ -150,10 +153,10 @@ test('per-attempt timeout aborts a hung request and can recover on another endpo
     now: harness.now,
     sleep: harness.sleep,
     random: () => 0,
-    request: async (_upstream, signal) => {
+    request: (_upstream, signal) => {
       calls++;
-      if (calls > 1) return new Response('ok', { status: 200 });
-      return new Promise((resolve, reject) => {
+      if (calls > 1) return Promise.resolve(new Response('ok', { status: 200 }));
+      return new Promise((_resolve, reject) => {
         signal.addEventListener('abort', () => reject(signal.reason), { once: true });
       });
     },
@@ -179,9 +182,9 @@ test('a successful streaming response is returned intact and never spliced with 
     now: harness.now,
     sleep: harness.sleep,
     random: harness.random,
-    request: async () => {
+    request: () => {
       calls++;
-      return new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+      return Promise.resolve(new Response(stream, { status: 200, headers: { 'content-type': 'text/event-stream' } }));
     },
   });
   assert.equal(calls, 1);
