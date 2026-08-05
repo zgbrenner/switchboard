@@ -71,7 +71,7 @@ function cloneEvent(event: ProxyTelemetryEvent): ProxyTelemetryEvent {
 export class ProxyTelemetry {
   private readonly retained: ProxyTelemetryEvent[] = [];
   private readonly maxEvents: number;
-  private readonly sink?: (event: ProxyTelemetryEvent) => void | Promise<void>;
+  private readonly sink: ((event: ProxyTelemetryEvent) => void | Promise<void>) | undefined;
   private readonly now: () => number;
   private readonly totals: MutableSummary = {
     requests: 0,
