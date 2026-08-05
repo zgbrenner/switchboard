@@ -1,10 +1,5 @@
 import { stableDigest } from '../runtime/digest.js';
-import type {
-  ProxyCircuitBreakerConfig,
-  ProxyRoutingProfile,
-  ProxyUpstreamPool,
-  ProxyUpstreamRoute,
-} from './types.js';
+import type { ProxyCircuitBreakerConfig, ProxyRoutingProfile, ProxyUpstreamPool, ProxyUpstreamRoute } from './types.js';
 
 export type ProxyCircuitState = 'closed' | 'open' | 'half-open';
 
