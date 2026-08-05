@@ -38,6 +38,7 @@ export interface ProxyRoutingConfig {
   strictCapabilities: boolean;
   requireZeroDataRetention: boolean;
   sessionStickiness: boolean;
+  outcomeLearning: boolean;
 }
 
 export interface ProxyRetryBudgetConfig {
@@ -108,6 +109,7 @@ export interface ProxyConfigInput {
     strictCapabilities?: boolean;
     requireZeroDataRetention?: boolean;
     sessionStickiness?: boolean;
+    outcomeLearning?: boolean;
   };
   reliability?: {
     maxAttempts?: number;
@@ -172,6 +174,7 @@ export interface ProxyPreparedRequest {
   judgeSource: 'deterministic' | 'judge' | 'fail-open';
   snapshot: RuntimeSessionSnapshot;
   requirements: ProxyRequestRequirements;
+  taskCategories: string[];
 }
 
 export interface ProxyControllerDependencies {
