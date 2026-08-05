@@ -73,11 +73,7 @@ function decision(
   };
 }
 
-function budgetDecision(
-  state: RuntimePolicyState,
-  signals: RuntimeSignal[],
-  policy: RuntimePolicyConfig,
-): RuntimeDecision | undefined {
+function budgetDecision(state: RuntimePolicyState, signals: RuntimeSignal[], policy: RuntimePolicyConfig): RuntimeDecision | undefined {
   if (state.relativeCost >= policy.maxRelativeCost) {
     return decision('stop_budget', signals, { reasonCodes: ['relative-cost-budget-exhausted'] });
   }
