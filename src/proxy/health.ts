@@ -206,11 +206,7 @@ export class ProxyHealthRegistry {
     return now >= state.openUntil && state.halfOpenInflight < this.circuitBreaker.halfOpenMaxRequests;
   }
 
-  private score(
-    upstream: ProxyUpstreamRoute,
-    maxWeight: number,
-    qualityScores: ProxySelectionContext['qualityScores'],
-  ): number {
+  private score(upstream: ProxyUpstreamRoute, maxWeight: number, qualityScores: ProxySelectionContext['qualityScores']): number {
     const state = this.state(upstream.id);
     const weights = PROFILE_WEIGHTS[this.profile];
     const health = 1 - Math.min(1, state.errorEwma);
