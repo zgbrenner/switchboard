@@ -1,5 +1,6 @@
 export { validateProxyConfig } from './config.js';
 export { createProxyController, prepareProxyBaseBody, rewriteProxyBody } from './controller.js';
+export type { ProxyControllerRuntimeDependencies } from './controller.js';
 export { ProxyHealthRegistry } from './health.js';
 export type {
   ProxyAttemptOutcome,
@@ -9,6 +10,14 @@ export type {
   ProxySelectionContext,
 } from './health.js';
 export { createProxyJudge } from './judge.js';
+export { ProxyOutcomeLearner } from './outcomes.js';
+export type {
+  ProxyOutcomeCategorySnapshot,
+  ProxyOutcomeEndpointSnapshot,
+  ProxyOutcomeLearnerOptions,
+  ProxyOutcomeSnapshot,
+  ProxyOutcomeUpdate,
+} from './outcomes.js';
 export {
   RetryTokenBucket,
   executeReliableFetch,
