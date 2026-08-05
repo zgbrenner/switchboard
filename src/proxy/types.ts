@@ -162,6 +162,7 @@ export interface ProxyPrepareInput {
 export interface ProxyPreparedRequest {
   wire: ProxyWire;
   sessionId: string;
+  baseBody: Record<string, unknown>;
   body: Record<string, unknown>;
   upstream: ProxyUpstreamRoute;
   upstreams: ProxyUpstreamPool;
