@@ -1,5 +1,5 @@
 export { validateProxyConfig } from './config.js';
-export { createProxyController } from './controller.js';
+export { createProxyController, prepareProxyBaseBody, rewriteProxyBody } from './controller.js';
 export { ProxyHealthRegistry } from './health.js';
 export type {
   ProxyAttemptOutcome,
@@ -21,10 +21,23 @@ export type {
   ProxyReliableFetchResult,
   RetryTokenBucketOptions,
 } from './reliability.js';
-export { extractProxyRequirements, filterCompatibleUpstreams } from './requirements.js';
+export {
+  ProxyCompatibilityError,
+  extractProxyRequirements,
+  filterCompatibleUpstreams,
+} from './requirements.js';
 export type { ProxyCompatibilityOptions, ProxyRequirementOptions } from './requirements.js';
 export { createSwitchboardProxyServer } from './server.js';
+export type { ProxyServerDependencies, SwitchboardProxyServer } from './server.js';
 export { normalizeProxySessionId } from './session-id.js';
+export { ProxyTelemetry } from './telemetry.js';
+export type {
+  ProxyTelemetryAttribute,
+  ProxyTelemetryEvent,
+  ProxyTelemetryInput,
+  ProxyTelemetryOptions,
+  ProxyTelemetrySummary,
+} from './telemetry.js';
 export { usageFromJson, usageFromSse } from './usage.js';
 export {
   extractAnthropicMessages,
