@@ -264,6 +264,7 @@ export function validateProxyConfig(input: ProxyConfigInput, env: NodeJS.Process
   const strictCapabilities = optionalBoolean(input.routing?.strictCapabilities, 'routing.strictCapabilities') ?? false;
   const requireZeroDataRetention = optionalBoolean(input.routing?.requireZeroDataRetention, 'routing.requireZeroDataRetention') ?? false;
   const sessionStickiness = optionalBoolean(input.routing?.sessionStickiness, 'routing.sessionStickiness') ?? true;
+  const outcomeLearning = optionalBoolean(input.routing?.outcomeLearning, 'routing.outcomeLearning') ?? true;
   const maxSessions = boundedInteger(input.session?.maxSessions ?? 256, 'session.maxSessions', 1, 10_000);
   const ttlMs = boundedInteger(input.session?.ttlMs ?? 30 * 60 * 1000, 'session.ttlMs', 1, Number.MAX_SAFE_INTEGER);
   const maxRequestBytes = boundedInteger(input.maxRequestBytes ?? 16 * 1024 * 1024, 'maxRequestBytes', 1, 64 * 1024 * 1024);
@@ -288,7 +289,7 @@ export function validateProxyConfig(input: ProxyConfigInput, env: NodeJS.Process
     alias,
     listen: { host, port, ...(token === undefined ? {} : { token }) },
     routes,
-    routing: { profile, strictCapabilities, requireZeroDataRetention, sessionStickiness },
+    routing: { profile, strictCapabilities, requireZeroDataRetention, sessionStickiness, outcomeLearning },
     reliability: normalizeReliability(input.reliability, profile),
     runtimePolicy: { ...(input.runtimePolicy ?? {}) },
     session: { maxSessions, ttlMs },
