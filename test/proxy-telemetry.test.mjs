@@ -66,7 +66,9 @@ test('telemetry is bounded, summarizes attempts, and isolates sink failures', ()
     },
   });
   assert.doesNotThrow(() => telemetry.record(attempt()));
-  telemetry.record(attempt({ status: 503, attempts: 2, fallback: true, inputTokens: 50, outputTokens: 0, cost: 0.002, errorClass: 'HTTP_503' }));
+  telemetry.record(
+    attempt({ status: 503, attempts: 2, fallback: true, inputTokens: 50, outputTokens: 0, cost: 0.002, errorClass: 'HTTP_503' }),
+  );
   telemetry.record(attempt({ status: 200, latencyMs: 77, inputTokens: 10, outputTokens: 5, cost: 0.0005 }));
   assert.equal(sinkCalls, 3);
   assert.equal(telemetry.events().length, 2);
