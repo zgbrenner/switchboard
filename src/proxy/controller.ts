@@ -59,8 +59,7 @@ function configuredLadder(
   strictCapabilities: boolean,
 ): QualityTier[] {
   const ladder = TIERS.filter(
-    (tier) =>
-      TIERS.indexOf(tier) >= TIERS.indexOf(floor) && compatiblePool(routes, tier, requirements, strictCapabilities).length > 0,
+    (tier) => TIERS.indexOf(tier) >= TIERS.indexOf(floor) && compatiblePool(routes, tier, requirements, strictCapabilities).length > 0,
   );
   if (ladder.length === 0) throw new Error(`No configured upstream satisfies the ${floor} tier and request requirements.`);
   return ladder;
@@ -179,12 +178,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     const ladder = configuredLadder(routeMap, preflight.tier, requirements, config.routing.strictCapabilities);
     const initialTier = ladder[0];
     if (initialTier === undefined) throw new Error('No compatible initial tier is available.');
-    const { upstream: initialUpstream } = selectUpstream(
-      routeMap,
-      initialTier,
-      requirements,
-      config.routing.strictCapabilities,
-    );
+    const { upstream: initialUpstream } = selectUpstream(routeMap, initialTier, requirements, config.routing.strictCapabilities);
     const runtime = new RuntimeSession(
       {
         id: sessionId,
@@ -248,12 +242,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     const snapshot = record.runtime.snapshot();
     const routeMap = config.routes[input.wire];
     if (!routeMap) throw new Error(`No ${input.wire} routes are configured.`);
-    const { upstream, upstreams } = selectUpstream(
-      routeMap,
-      snapshot.currentTier,
-      requirements,
-      config.routing.strictCapabilities,
-    );
+    const { upstream, upstreams } = selectUpstream(routeMap, snapshot.currentTier, requirements, config.routing.strictCapabilities);
     const body = rewriteBody(input.wire, input.body, upstream, decision, snapshot.currentEffort);
     record.lastAccessedAt = now();
     return {
