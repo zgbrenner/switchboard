@@ -35,6 +35,21 @@ export interface ProxyReliableFetchOptions {
   random?: () => number;
 }
 
+export class ProxyReliableFetchError extends Error {
+  readonly attempts: ProxyReliableAttempt[];
+  readonly upstream: ProxyUpstreamRoute;
+  readonly originalError: unknown;
+
+  constructor(originalError: unknown, attempts: ProxyReliableAttempt[], upstream: ProxyUpstreamRoute) {
+    const detail = originalError instanceof Error ? originalError.message : String(originalError);
+    super(`Reliable upstream attempts exhausted: ${detail}`);
+    this.name = 'ProxyReliableFetchError';
+    this.originalError = originalError;
+    this.attempts = attempts.map((attempt) => ({ ...attempt }));
+    this.upstream = upstream;
+  }
+}
+
 export class RetryTokenBucket {
   private tokens: number;
   private lastRefillAt: number;
@@ -138,6 +153,7 @@ export async function executeReliableFetch(options: ProxyReliableFetchOptions): 
   const attempts: ProxyReliableAttempt[] = [];
   let lastResponse: { response: Response; upstream: ProxyUpstreamRoute } | undefined;
   let lastError: unknown;
+  let lastUpstream: ProxyUpstreamRoute | undefined;
 
   for (let attempt = 1; attempt <= options.reliability.maxAttempts; attempt++) {
     const upstream = options.health.select(options.upstreams, { ...options.selection, excludedIds: attempted });
@@ -145,9 +161,12 @@ export async function executeReliableFetch(options: ProxyReliableFetchOptions): 
       if (lastResponse !== undefined) {
         return { ...lastResponse, attempts, fallback: attempts.some((item) => item.upstreamId !== lastResponse?.upstream.id) };
       }
-      if (lastError !== undefined) throw lastError;
+      if (lastError !== undefined && lastUpstream !== undefined) {
+        throw new ProxyReliableFetchError(lastError, attempts, lastUpstream);
+      }
       throw new Error('No healthy compatible upstream is available.');
     }
+    lastUpstream = upstream;
 
     options.health.beginAttempt(upstream.id);
     const startedAt = now();
@@ -189,7 +208,9 @@ export async function executeReliableFetch(options: ProxyReliableFetchOptions): 
       options.health.completeAttempt(upstream.id, { ok: false, retryable: true, latencyMs });
       attempts.push({ upstreamId: upstream.id, latencyMs, retryable: true, rateLimited: false, errorClass: classification });
       lastError = error;
-      if (attempt >= options.reliability.maxAttempts || !retryBudget.tryTake()) throw error;
+      if (attempt >= options.reliability.maxAttempts || !retryBudget.tryTake()) {
+        throw new ProxyReliableFetchError(error, attempts, upstream);
+      }
       attempted.add(upstream.id);
       const delay = backoffMilliseconds(options.reliability, attempt - 1, random);
       if (delay > 0) await sleep(delay);
@@ -197,6 +218,8 @@ export async function executeReliableFetch(options: ProxyReliableFetchOptions): 
   }
 
   if (lastResponse !== undefined) return { ...lastResponse, attempts, fallback: attempts.length > 1 };
-  if (lastError !== undefined) throw lastError;
+  if (lastError !== undefined && lastUpstream !== undefined) {
+    throw new ProxyReliableFetchError(lastError, attempts, lastUpstream);
+  }
   throw new Error('Reliable fetch ended without a response or error.');
 }
