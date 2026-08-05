@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   ProxyHealthRegistry,
+  ProxyReliableFetchError,
   RetryTokenBucket,
   executeReliableFetch,
   isRetryableStatus,
@@ -187,4 +188,32 @@ test('a successful streaming response is returned intact and never spliced with 
   });
   assert.equal(calls, 1);
   assert.match(await result.response.text(), /first/u);
+});
+
+test('exhausted network retries preserve the actual final endpoint and complete attempt trace', async () => {
+  const harness = setup({ maxAttempts: 2, initialBackoffMs: 0, maxBackoffMs: 0 });
+  let calls = 0;
+  await assert.rejects(
+    executeReliableFetch({
+      upstreams: harness.config.routes.responses.balanced,
+      health: harness.health,
+      selection: { seed: 'exhausted' },
+      reliability: harness.config.reliability,
+      now: harness.now,
+      sleep: harness.sleep,
+      random: harness.random,
+      request: (upstream) => {
+        calls++;
+        return Promise.reject(new Error(`offline:${upstream.id}`));
+      },
+    }),
+    (error) => {
+      assert.ok(error instanceof ProxyReliableFetchError);
+      assert.equal(error.attempts.length, 2);
+      assert.equal(error.upstream.id, error.attempts.at(-1).upstreamId);
+      assert.match(error.message, /offline/u);
+      return true;
+    },
+  );
+  assert.equal(calls, 2);
 });
