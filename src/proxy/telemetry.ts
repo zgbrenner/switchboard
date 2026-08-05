@@ -1,6 +1,6 @@
 import { stableDigest } from '../runtime/digest.js';
-import type { QualityTier } from '../shared/types.js';
 import type { RuntimeDecisionAction } from '../runtime/types.js';
+import type { QualityTier } from '../shared/types.js';
 import type { ProxyWire } from './types.js';
 
 export type ProxyTelemetryAttribute = string | number | boolean;
@@ -160,7 +160,7 @@ export class ProxyTelemetry {
     if (this.sink === undefined) return;
     try {
       const result = this.sink(cloneEvent(event));
-      if (result instanceof Promise) void result.catch(() => undefined);
+      if (result !== undefined) void Promise.resolve(result).catch(() => undefined);
     } catch {
       // Telemetry is best-effort and must never fail a model request.
     }
