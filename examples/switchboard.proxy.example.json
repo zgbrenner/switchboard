@@ -5,32 +5,116 @@
     "port": 8788,
     "tokenEnv": "SWITCHBOARD_PROXY_TOKEN"
   },
+  "routing": {
+    "profile": "balanced",
+    "strictCapabilities": false,
+    "requireZeroDataRetention": false,
+    "sessionStickiness": true,
+    "outcomeLearning": true
+  },
   "routes": {
     "responses": {
-      "balanced": {
-        "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-5-mini",
-        "apiKeyEnv": "OPENAI_API_KEY",
-        "reasoningEffort": true
-      },
+      "balanced": [
+        {
+          "id": "responses-balanced-primary",
+          "baseUrl": "https://api.openai.com/v1",
+          "model": "your-balanced-responses-model",
+          "apiKeyEnv": "OPENAI_API_KEY",
+          "weight": 3,
+          "inputCostPerMillion": 0,
+          "outputCostPerMillion": 0,
+          "capabilities": {
+            "tools": true,
+            "vision": true,
+            "json": true,
+            "reasoning": true,
+            "maxContextTokens": 128000,
+            "maxOutputTokens": 16000,
+            "dataRetention": "unknown"
+          }
+        },
+        {
+          "id": "responses-balanced-backup",
+          "baseUrl": "https://your-openai-compatible-backup.example/v1",
+          "model": "your-backup-responses-model",
+          "apiKeyEnv": "BACKUP_API_KEY",
+          "weight": 1,
+          "capabilities": {
+            "tools": true,
+            "vision": false,
+            "json": true,
+            "reasoning": false,
+            "maxContextTokens": 128000,
+            "maxOutputTokens": 16000,
+            "dataRetention": "unknown"
+          }
+        }
+      ],
       "deep": {
+        "id": "responses-deep",
         "baseUrl": "https://api.openai.com/v1",
-        "model": "gpt-5.4",
+        "model": "your-deep-responses-model",
         "apiKeyEnv": "OPENAI_API_KEY",
-        "reasoningEffort": true
+        "reasoningEffort": true,
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "json": true,
+          "reasoning": true,
+          "maxContextTokens": 400000,
+          "maxOutputTokens": 64000,
+          "dataRetention": "unknown"
+        }
       }
     },
     "messages": {
       "balanced": {
+        "id": "messages-balanced",
         "baseUrl": "https://api.anthropic.com/v1",
-        "model": "claude-sonnet-4-5",
-        "apiKeyEnv": "ANTHROPIC_API_KEY"
+        "model": "your-balanced-messages-model",
+        "apiKeyEnv": "ANTHROPIC_API_KEY",
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "json": false,
+          "reasoning": false,
+          "maxContextTokens": 200000,
+          "maxOutputTokens": 16000,
+          "dataRetention": "unknown"
+        }
       },
       "deep": {
+        "id": "messages-deep",
         "baseUrl": "https://api.anthropic.com/v1",
-        "model": "claude-opus-4-5",
-        "apiKeyEnv": "ANTHROPIC_API_KEY"
+        "model": "your-deep-messages-model",
+        "apiKeyEnv": "ANTHROPIC_API_KEY",
+        "capabilities": {
+          "tools": true,
+          "vision": true,
+          "json": false,
+          "reasoning": true,
+          "maxContextTokens": 200000,
+          "maxOutputTokens": 64000,
+          "dataRetention": "unknown"
+        }
       }
+    }
+  },
+  "reliability": {
+    "maxAttempts": 2,
+    "requestTimeoutMs": 60000,
+    "initialBackoffMs": 250,
+    "maxBackoffMs": 4000,
+    "maxRetryAfterMs": 30000,
+    "retryBudget": {
+      "capacity": 10,
+      "refillPerSecond": 1
+    },
+    "circuitBreaker": {
+      "failureThreshold": 3,
+      "cooldownMs": 30000,
+      "halfOpenMaxRequests": 1,
+      "ewmaAlpha": 0.25
     }
   },
   "runtimePolicy": {
