@@ -19,6 +19,7 @@ export type {
   ProxyOutcomeUpdate,
 } from './outcomes.js';
 export {
+  ProxyReliableFetchError,
   RetryTokenBucket,
   executeReliableFetch,
   isRetryableStatus,
