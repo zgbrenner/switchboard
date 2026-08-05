@@ -87,8 +87,7 @@ function normalizedCategories(categories: readonly string[], maximum: number): s
 
 function checkpointReward(observations: readonly RuntimeObservationInput[]): 0 | 1 | undefined {
   const checkpoints = observations.filter(
-    (observation) =>
-      (observation.kind === 'execute' || observation.kind === 'verify') && observation.status !== 'pending',
+    (observation) => (observation.kind === 'execute' || observation.kind === 'verify') && observation.status !== 'pending',
   );
   if (checkpoints.some((observation) => observation.status === 'success')) return 1;
   if (checkpoints.some((observation) => observation.status === 'failure')) return 0;
@@ -113,12 +112,7 @@ export class ProxyOutcomeLearner {
     this.priorFailure = boundedNumber(options.priorFailure ?? 2, 'priorFailure', 0.001, 1_000_000);
     this.exploration = boundedNumber(options.exploration ?? 0.12, 'exploration', 0, 1);
     this.maxEndpoints = boundedInteger(options.maxEndpoints ?? 128, 'maxEndpoints', 1, 10_000);
-    this.maxCategoriesPerEndpoint = boundedInteger(
-      options.maxCategoriesPerEndpoint ?? 64,
-      'maxCategoriesPerEndpoint',
-      1,
-      2_000,
-    );
+    this.maxCategoriesPerEndpoint = boundedInteger(options.maxCategoriesPerEndpoint ?? 64, 'maxCategoriesPerEndpoint', 1, 2_000);
     this.maxPendingSessions = boundedInteger(options.maxPendingSessions ?? 1_024, 'maxPendingSessions', 1, 100_000);
     this.pendingTtlMs = boundedInteger(options.pendingTtlMs ?? 30 * 60 * 1_000, 'pendingTtlMs', 1, Number.MAX_SAFE_INTEGER);
     this.now = options.now ?? Date.now;
@@ -171,10 +165,7 @@ export class ProxyOutcomeLearner {
           categories: Object.fromEntries(
             [...endpoint.categories.entries()]
               .sort(([left], [right]) => left.localeCompare(right))
-              .map(([category, stats]) => [
-                category,
-                { successes: stats.successes, failures: stats.failures, mean: this.mean(stats) },
-              ]),
+              .map(([category, stats]) => [category, { successes: stats.successes, failures: stats.failures, mean: this.mean(stats) }]),
           ),
         })),
     };
@@ -245,8 +236,7 @@ export class ProxyOutcomeLearner {
   }
 
   private mean(stats: OutcomeStats): number {
-    return (this.priorSuccess + stats.successes) /
-      (this.priorSuccess + this.priorFailure + stats.successes + stats.failures);
+    return (this.priorSuccess + stats.successes) / (this.priorSuccess + this.priorFailure + stats.successes + stats.failures);
   }
 
   private evictOldestPending(): void {
