@@ -1,8 +1,10 @@
 import { coordinateRuntimeDecision } from '../judge/coordinator.js';
 import { DeterministicRuntimeJudge } from '../judge/deterministic.js';
 import { RuntimeSession } from '../runtime/session.js';
-import type { RuntimeDecision, RuntimeObservationResult } from '../runtime/types.js';
+import type { RuntimeDecision, RuntimeObservationInput, RuntimeObservationResult } from '../runtime/types.js';
 import type { EffortLevel, QualityTier } from '../shared/types.js';
+import type { ProxyOutcomeLearner } from './outcomes.js';
+import { extractProxyRequirements, filterCompatibleUpstreams, ProxyCompatibilityError } from './requirements.js';
 import { normalizeProxySessionId } from './session-id.js';
 import { extractProxyRequest, sanitizeForCleanRestart, stableProxySessionId } from './wire.js';
 import type {
@@ -10,8 +12,10 @@ import type {
   ProxyControllerDependencies,
   ProxyPrepareInput,
   ProxyPreparedRequest,
+  ProxyRequestRequirements,
   ProxySessionInspection,
   ProxyTierRoutes,
+  ProxyUpstreamPool,
   ProxyUpstreamRoute,
   ProxyUsage,
   ProxyWire,
@@ -22,11 +26,16 @@ const EFFORTS: EffortLevel[] = ['low', 'medium', 'high', 'max'];
 const DEFAULT_EFFORT: Record<QualityTier, EffortLevel> = { fast: 'low', balanced: 'medium', deep: 'high', max: 'max' };
 const EFFORT_CEILING: Record<QualityTier, EffortLevel> = { fast: 'medium', balanced: 'high', deep: 'high', max: 'max' };
 
+export interface ProxyControllerRuntimeDependencies extends ProxyControllerDependencies {
+  outcomes?: ProxyOutcomeLearner;
+}
+
 interface ProxySessionRecord {
   runtime: RuntimeSession;
   seen: Set<string>;
   lastDecision: RuntimeDecision;
   lastAccessedAt: number;
+  taskCategories: string[];
 }
 
 function continueDecision(): RuntimeDecision {
@@ -39,16 +48,43 @@ function continueDecision(): RuntimeDecision {
   };
 }
 
-function configuredLadder(routes: ProxyTierRoutes, floor: QualityTier): QualityTier[] {
-  const ladder = TIERS.filter((tier) => TIERS.indexOf(tier) >= TIERS.indexOf(floor) && routes[tier] !== undefined);
-  if (ladder.length === 0) throw new Error(`No configured upstream satisfies the ${floor} tier.`);
+function compatiblePool(
+  routes: ProxyTierRoutes,
+  tier: QualityTier,
+  requirements: ProxyRequestRequirements,
+  strictCapabilities: boolean,
+): ProxyUpstreamPool {
+  const pool = routes[tier] ?? [];
+  return filterCompatibleUpstreams(pool, requirements, { strictCapabilities });
+}
+
+function configuredLadder(
+  routes: ProxyTierRoutes,
+  floor: QualityTier,
+  requirements: ProxyRequestRequirements,
+  strictCapabilities: boolean,
+): QualityTier[] {
+  const ladder = TIERS.filter(
+    (tier) => TIERS.indexOf(tier) >= TIERS.indexOf(floor) && compatiblePool(routes, tier, requirements, strictCapabilities).length > 0,
+  );
+  if (ladder.length === 0) {
+    throw new ProxyCompatibilityError(`No configured upstream satisfies the ${floor} tier and request requirements.`);
+  }
   return ladder;
 }
 
-function selectUpstream(routes: ProxyTierRoutes, tier: QualityTier): ProxyUpstreamRoute {
-  const upstream = routes[tier];
-  if (upstream === undefined) throw new Error(`No upstream is configured for the active ${tier} tier.`);
-  return upstream;
+function selectUpstream(
+  routes: ProxyTierRoutes,
+  tier: QualityTier,
+  requirements: ProxyRequestRequirements,
+  strictCapabilities: boolean,
+): { upstream: ProxyUpstreamRoute; upstreams: ProxyUpstreamPool } {
+  const upstreams = compatiblePool(routes, tier, requirements, strictCapabilities);
+  const upstream = upstreams[0];
+  if (upstream === undefined) {
+    throw new ProxyCompatibilityError(`No compatible upstream is configured for the active ${tier} tier.`);
+  }
+  return { upstream, upstreams };
 }
 
 function effortAtLeast(left: EffortLevel, right: EffortLevel): EffortLevel {
@@ -60,23 +96,25 @@ function initialEffort(wire: ProxyWire, tier: QualityTier, preflightEffort: Effo
   return EFFORT_CEILING[tier];
 }
 
-function rewriteBody(
+export function prepareProxyBaseBody(wire: ProxyWire, body: Record<string, unknown>, decision: RuntimeDecision): Record<string, unknown> {
+  if (decision.action === 'restart_clean' || decision.action === 'switch_model') return sanitizeForCleanRestart(wire, body);
+  return { ...body };
+}
+
+export function rewriteProxyBody(
   wire: ProxyWire,
-  body: Record<string, unknown>,
+  baseBody: Record<string, unknown>,
   upstream: ProxyUpstreamRoute,
-  decision: RuntimeDecision,
   effort: string,
 ): Record<string, unknown> {
-  const cleaned =
-    decision.action === 'restart_clean' || decision.action === 'switch_model' ? sanitizeForCleanRestart(wire, body) : { ...body };
   if (wire === 'responses' && upstream.reasoningEffort) {
     const existing =
-      cleaned.reasoning && typeof cleaned.reasoning === 'object' && !Array.isArray(cleaned.reasoning)
-        ? (cleaned.reasoning as Record<string, unknown>)
+      baseBody.reasoning && typeof baseBody.reasoning === 'object' && !Array.isArray(baseBody.reasoning)
+        ? (baseBody.reasoning as Record<string, unknown>)
         : {};
-    return { ...cleaned, model: upstream.model, reasoning: { ...existing, effort } };
+    return { ...baseBody, model: upstream.model, reasoning: { ...existing, effort } };
   }
-  return { ...cleaned, model: upstream.model };
+  return { ...baseBody, model: upstream.model };
 }
 
 function routeHeaders(
@@ -91,6 +129,7 @@ function routeHeaders(
     'x-switchboard-tier': snapshot.currentTier,
     'x-switchboard-effort': snapshot.currentEffort,
     'x-switchboard-model': upstream.model,
+    'x-switchboard-upstream': upstream.id,
     'x-switchboard-decision': decision.action,
     'x-switchboard-judge': judgeSource,
   };
@@ -100,7 +139,7 @@ function relativeCost(usage: ProxyUsage, upstream: ProxyUpstreamRoute): number {
   return (usage.inputTokens * upstream.inputCostPerMillion + usage.outputTokens * upstream.outputCostPerMillion) / 1_000_000;
 }
 
-export function createProxyController(config: ProxyConfig, dependencies: ProxyControllerDependencies) {
+export function createProxyController(config: ProxyConfig, dependencies: ProxyControllerRuntimeDependencies) {
   const judge = dependencies.judge ?? new DeterministicRuntimeJudge();
   const now = dependencies.now ?? Date.now;
   const sessions = new Map<string, ProxySessionRecord>();
@@ -125,6 +164,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     sessionId: string,
     prompt: string,
     context: Array<{ role: 'user' | 'assistant'; text: string }>,
+    requirements: ProxyRequestRequirements,
   ): Promise<ProxySessionRecord> {
     cleanup();
     const existing = sessions.get(sessionId);
@@ -147,9 +187,10 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     });
     const routeMap = config.routes[input.wire];
     if (!routeMap) throw new Error(`No ${input.wire} routes are configured.`);
-    const ladder = configuredLadder(routeMap, preflight.tier);
-    const initialTier = ladder[0] as QualityTier;
-    const initialUpstream = selectUpstream(routeMap, initialTier);
+    const ladder = configuredLadder(routeMap, preflight.tier, requirements, config.routing.strictCapabilities);
+    const initialTier = ladder[0];
+    if (initialTier === undefined) throw new ProxyCompatibilityError('No compatible initial tier is available.');
+    const { upstream: initialUpstream } = selectUpstream(routeMap, initialTier, requirements, config.routing.strictCapabilities);
     const runtime = new RuntimeSession(
       {
         id: sessionId,
@@ -165,6 +206,7 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
       seen: new Set<string>(),
       lastDecision: continueDecision(),
       lastAccessedAt: now(),
+      taskCategories: [...preflight.taskCategories].slice(0, 16),
     };
     sessions.set(sessionId, record);
     return record;
@@ -173,6 +215,9 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
   async function prepare(input: ProxyPrepareInput): Promise<ProxyPreparedRequest> {
     if (input.body.model !== config.alias) throw new TypeError(`Proxy model must be the configured alias ${config.alias}.`);
     const extracted = extractProxyRequest(input.wire, input.body);
+    const requirements = extractProxyRequirements(input.wire, input.body, {
+      requireZeroDataRetention: config.routing.requireZeroDataRetention,
+    });
     const explicit = input.headers['x-switchboard-session'];
     const sessionId = normalizeProxySessionId(
       stableProxySessionId({
@@ -183,15 +228,18 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
         ...(input.clientFingerprint === undefined ? {} : { clientFingerprint: input.clientFingerprint }),
       }),
     );
-    const record = await getOrCreate(input, sessionId, extracted.prompt, extracted.context);
+    const record = await getOrCreate(input, sessionId, extracted.prompt, extracted.context, requirements);
     let latest: RuntimeObservationResult | undefined;
     let judgeSource: ProxyPreparedRequest['judgeSource'] = 'deterministic';
+    const newObservations: RuntimeObservationInput[] = [];
     for (const observation of extracted.observations) {
       if (record.seen.has(observation.key)) continue;
       record.seen.add(observation.key);
+      newObservations.push(observation.input);
       latest = record.runtime.observe(observation.input);
       record.lastDecision = latest.decision;
     }
+    if (newObservations.length > 0) dependencies.outcomes?.observe(sessionId, newObservations);
     if (latest && latest.signals.length > 0 && latest.decision.action === 'continue') {
       const coordinated = await coordinateRuntimeDecision(judge, {
         snapshot: latest.snapshot,
@@ -210,19 +258,24 @@ export function createProxyController(config: ProxyConfig, dependencies: ProxyCo
     const snapshot = record.runtime.snapshot();
     const routeMap = config.routes[input.wire];
     if (!routeMap) throw new Error(`No ${input.wire} routes are configured.`);
-    const upstream = selectUpstream(routeMap, snapshot.currentTier);
-    const body = rewriteBody(input.wire, input.body, upstream, decision, snapshot.currentEffort);
+    const { upstream, upstreams } = selectUpstream(routeMap, snapshot.currentTier, requirements, config.routing.strictCapabilities);
+    const baseBody = prepareProxyBaseBody(input.wire, input.body, decision);
+    const body = rewriteProxyBody(input.wire, baseBody, upstream, snapshot.currentEffort);
     record.lastAccessedAt = now();
     return {
       wire: input.wire,
       sessionId,
+      baseBody,
       body,
       upstream,
+      upstreams,
       endpoint: `${upstream.baseUrl}/${input.wire}`,
       headers: routeHeaders(sessionId, snapshot, decision, judgeSource, upstream),
       decision,
       judgeSource,
       snapshot,
+      requirements,
+      taskCategories: [...record.taskCategories],
     };
   }
 

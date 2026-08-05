@@ -75,32 +75,68 @@ try {
     'balanced',
   );
   assert.ok(new judge.DeterministicRuntimeJudge());
+
+  const learner = new proxyModule.ProxyOutcomeLearner({ exploration: 0 });
+  learner.recordSelection('packed-session', 'smoke-upstream', ['smoke']);
+  learner.observe('packed-session', [{ tool: 'verify', kind: 'verify', status: 'success' }]);
+  assert.equal(learner.snapshot().totalOutcomes, 1);
+  const telemetry = new proxyModule.ProxyTelemetry({ maxEvents: 2 });
+  telemetry.record({
+    wire: 'responses',
+    sessionId: 'packed-session',
+    endpointId: 'smoke-upstream',
+    provider: 'localhost',
+    requestModel: 'switchboard',
+    responseModel: 'smoke-model',
+    tier: 'balanced',
+    decision: 'continue',
+    judgeSource: 'deterministic',
+    status: 200,
+    latencyMs: 1,
+    attempts: 1,
+    fallback: false,
+    inputTokens: 1,
+    outputTokens: 1,
+    cost: 0,
+  });
+  assert.equal(telemetry.summary().requests, 1);
+
   const proxyConfig = proxyModule.validateProxyConfig({
     listen: { host: '127.0.0.1', port: 0 },
     routes: {
       responses: {
-        balanced: { baseUrl: 'http://127.0.0.1:9/v1', model: 'smoke-model' },
+        balanced: [
+          { id: 'smoke-upstream', baseUrl: 'http://127.0.0.1:9/v1', model: 'smoke-model' },
+          { id: 'smoke-backup', baseUrl: 'http://127.0.0.1:8/v1', model: 'smoke-backup-model' },
+        ],
       },
     },
   });
+  assert.equal(proxyConfig.routes.responses.balanced.length, 2);
+  assert.equal(proxyConfig.routing.outcomeLearning, true);
   const proxy = proxyModule.createSwitchboardProxyServer(proxyConfig, {
-    route: async () => ({
-      tier: 'balanced',
-      effort: 'medium',
-      capabilities: { web: false, files: false, vision: false, longContext: false, code: false },
-      confidence: 0.5,
-      shouldUseJudge: false,
-      reasons: [],
-      scores: { fast: 0, balanced: 1, deep: 0, max: 0 },
-      taskCategories: [],
-    }),
+    route: () =>
+      Promise.resolve({
+        tier: 'balanced',
+        effort: 'medium',
+        capabilities: { web: false, files: false, vision: false, longContext: false, code: false },
+        confidence: 0.5,
+        shouldUseJudge: false,
+        reasons: [],
+        scores: { fast: 0, balanced: 1, deep: 0, max: 0 },
+        taskCategories: ['smoke'],
+      }),
   });
   const address = await proxy.listen();
   const health = await fetch(`http://127.0.0.1:${address.port}/health`);
   assert.equal(health.status, 200);
+  const status = await fetch(`http://127.0.0.1:${address.port}/v1/switchboard/status`);
+  assert.equal(status.status, 200);
+  const statusBody = await status.json();
+  assert.equal(statusBody.routing.outcomeLearning, true);
   await proxy.close();
   await access(resolve(packageRoot, 'proxy/index.mjs'));
-  console.log('Packed Switchboard artifact launched MCP and imported runtime, judge, and proxy exports successfully.');
+  console.log('Packed Switchboard artifact launched MCP and exercised runtime, judge, adaptive proxy, telemetry, and outcome exports.');
 } finally {
   child.stdin.end();
   child.kill('SIGTERM');
